@@ -1,0 +1,37 @@
+[project]
+name = "warehouse-backend"
+version = "0.1.0"
+description = "FastAPI backend for the Digital Warehouse Operations and Fulfillment Platform"
+requires-python = ">=3.12"
+
+# ---------- Black (formatter) ----------
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+# ---------- Ruff (linter) ----------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # import sorting
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "B008", # FastAPI uses function calls in default arguments (Depends)
+]
+
+# ---------- Pytest ----------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra -q"

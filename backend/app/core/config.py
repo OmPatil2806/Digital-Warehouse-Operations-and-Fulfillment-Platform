@@ -37,6 +37,33 @@ class Settings(BaseSettings):
     )
 
     @property
+    def is_sqlite(self) -> bool:
+        """True when the configured database is SQLite."""
+        return self.database_url.startswith("sqlite")
+
+    @property
+    def sqlalchemy_database_url(self) -> str:
+        """Database URL with relative SQLite paths resolved against the project root.
+
+        This makes `sqlite:///./database/warehouse.db` point to the same file no matter
+        whether the app is started from the project root or from `backend/`.
+        """
+        prefix = "sqlite:///"
+        if not self.database_url.startswith(prefix):
+            return self.database_url
+        db_path = self.database_url[len(prefix) :]
+        if db_path == ":memory:" or Path(db_path).is_absolute():
+            return self.database_url
+        return f"{prefix}{(PROJECT_ROOT / db_path).resolve().as_posix()}"
+
+    def ensure_sqlite_directory(self) -> None:
+        """Create the folder that holds the SQLite file if it does not exist yet."""
+        prefix = "sqlite:///"
+        url = self.sqlalchemy_database_url
+        if url.startswith(prefix) and not url.endswith(":memory:"):
+            Path(url[len(prefix) :]).parent.mkdir(parents=True, exist_ok=True)
+
+    @property
     def cors_origin_list(self) -> list[str]:
         """CORS origins as a clean list."""
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

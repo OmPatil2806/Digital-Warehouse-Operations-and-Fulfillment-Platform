@@ -1,0 +1,9 @@
+Alembic database migrations for the warehouse backend.
+
+Each file in versions/ describes one schema change. Run commands from the backend/ folder:
+
+    alembic revision --autogenerate -m "add products table"
+    alembic upgrade head
+    alembic downgrade -1
+    alembic current
+    alembic history

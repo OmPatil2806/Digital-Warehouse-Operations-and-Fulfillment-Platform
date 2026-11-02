@@ -1,0 +1,76 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  workflow_dispatch: # allow manual runs from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Lint, test and smoke-test (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint (Ruff)
+        run: ruff check . --output-format=github
+
+      - name: Format check (Black)
+        run: black --check .
+
+      - name: Run tests (Pytest)
+        run: pytest -v
+
+      - name: Apply database migrations (Alembic)
+        run: alembic upgrade head
+
+      - name: Smoke test - start the API and call /health
+        run: |
+          uvicorn app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          for attempt in $(seq 1 20); do
+            if response=$(curl -fsS http://127.0.0.1:8000/api/v1/health); then
+              echo "Health response: $response"
+              echo "$response" | grep -q '"status":"ok"'
+              echo "$response" | grep -q '"database":"ok"'
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API did not become healthy in time. Server log:"
+          cat uvicorn.log
+          exit 1

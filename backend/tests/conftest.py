@@ -1,7 +1,9 @@
 """Shared pytest fixtures.
 
 Every test run uses its own temporary SQLite database, so tests never touch
-the real `database/warehouse.db` file.
+the real `database/warehouse.db` file. The schema is built by running the real
+Alembic migrations, and every test runs inside a transaction that is rolled back
+afterwards, so tests cannot affect each other.
 """
 
 import os
@@ -17,14 +19,25 @@ os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_DB_DIR / 'test.db').as_posix()}"
 
 import pytest  # noqa: E402
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import Engine  # noqa: E402
-from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
-from app.database.base import Base  # noqa: E402
 from app.database.session import build_engine, get_db  # noqa: E402
 from app.main import app  # noqa: E402
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+
+def make_alembic_config(database_url: str) -> Config:
+    """Alembic config pointing at the given database (without touching logging setup)."""
+    config = Config()
+    config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    return config
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
@@ -34,22 +47,32 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 @pytest.fixture(scope="session")
 def test_engine() -> Generator[Engine, None, None]:
-    """Engine bound to the temporary test database, with all tables created."""
-    engine = build_engine(get_settings().sqlalchemy_database_url)
-    Base.metadata.create_all(engine)
+    """Engine bound to the temporary test database, migrated to the latest schema."""
+    database_url = get_settings().sqlalchemy_database_url
+    command.upgrade(make_alembic_config(database_url), "head")
+    engine = build_engine(database_url)
     yield engine
-    Base.metadata.drop_all(engine)
     engine.dispose()
 
 
 @pytest.fixture()
 def db_session(test_engine: Engine) -> Generator[Session, None, None]:
-    """A database session for one test."""
-    session = sessionmaker(bind=test_engine, autoflush=False, expire_on_commit=False)()
+    """A database session for one test; everything it writes is rolled back afterwards."""
+    connection = test_engine.connect()
+    transaction = connection.begin()
+    # Commits inside the test only release a SAVEPOINT; the outer transaction is rolled back.
+    session = Session(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+        autoflush=False,
+        expire_on_commit=False,
+    )
     try:
         yield session
     finally:
         session.close()
+        transaction.rollback()
+        connection.close()
 
 
 @pytest.fixture()

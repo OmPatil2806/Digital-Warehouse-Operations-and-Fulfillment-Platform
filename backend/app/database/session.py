@@ -33,10 +33,18 @@ def build_engine(database_url: str | None = None) -> Engine:
     if is_sqlite:
 
         @event.listens_for(new_engine, "connect")
-        def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        def _on_sqlite_connect(dbapi_connection, _connection_record) -> None:
+            # Python's sqlite3 driver normally starts transactions itself (late, and
+            # not for every statement), which breaks SAVEPOINTs and rollbacks. Turning
+            # that off lets SQLAlchemy emit BEGIN explicitly (see the "begin" hook below).
+            dbapi_connection.isolation_level = None
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
+
+        @event.listens_for(new_engine, "begin")
+        def _on_sqlite_begin(connection) -> None:
+            connection.exec_driver_sql("BEGIN")
 
     return new_engine
 

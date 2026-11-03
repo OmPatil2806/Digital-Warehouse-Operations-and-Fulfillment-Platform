@@ -9,11 +9,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from app import models  # noqa: F401  (registers every table on Base.metadata)
 from app.core.config import get_settings
 from app.database.base import Base
-
-# Import all models here (from Phase 2 onwards) so autogenerate can see them, e.g.:
-# from app.models import user  # noqa: F401
 
 config = context.config
 
@@ -21,7 +19,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.sqlalchemy_database_url)
+# Use the app's DATABASE_URL unless a URL was passed in explicitly (e.g. by tests).
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", settings.sqlalchemy_database_url)
 
 target_metadata = Base.metadata
 
@@ -42,7 +42,8 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Apply migrations against a live database connection."""
-    settings.ensure_sqlite_directory()
+    if config.get_main_option("sqlalchemy.url") == settings.sqlalchemy_database_url:
+        settings.ensure_sqlite_directory()
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

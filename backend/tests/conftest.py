@@ -16,6 +16,7 @@ from pathlib import Path
 # over the project `.env`, and the module-level engine is created at import time.
 _TEST_DB_DIR = Path(tempfile.mkdtemp(prefix="warehouse-tests-"))
 os.environ["APP_ENV"] = "test"
+os.environ["BCRYPT_ROUNDS"] = "4"  # minimum cost: keeps password-hashing tests fast
 os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_DB_DIR / 'test.db').as_posix()}"
 
 import pytest  # noqa: E402

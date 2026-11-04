@@ -13,7 +13,8 @@ from tests.conftest import make_alembic_config
 
 AUTH_TABLES = {"users", "roles", "user_roles", "refresh_tokens"}
 CATALOG_TABLES = {"categories", "products", "suppliers", "supplier_products"}
-ALL_TABLES = AUTH_TABLES | CATALOG_TABLES
+WAREHOUSE_TABLES = {"warehouses", "zones", "racks", "shelves", "bins"}
+ALL_TABLES = AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES
 
 
 def _url(tmp_path: Path) -> str:

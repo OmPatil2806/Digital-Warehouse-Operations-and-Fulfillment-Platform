@@ -6,16 +6,24 @@ Every model module must be imported here so that `Base.metadata` knows all table
 
 from app.models.catalog import Category, Product, Supplier, SupplierProduct
 from app.models.user import ROLE_DESCRIPTIONS, RefreshToken, Role, RoleName, User, user_roles
+from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone, ZoneType, build_location_code
 
 __all__ = [
     "ROLE_DESCRIPTIONS",
+    "Bin",
     "Category",
     "Product",
+    "Rack",
     "RefreshToken",
     "Role",
     "RoleName",
+    "Shelf",
     "Supplier",
     "SupplierProduct",
     "User",
+    "Warehouse",
+    "Zone",
+    "ZoneType",
+    "build_location_code",
     "user_roles",
 ]

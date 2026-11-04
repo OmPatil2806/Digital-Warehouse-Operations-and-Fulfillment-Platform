@@ -29,3 +29,10 @@ class ConflictError(AppError):
 
     status_code = HTTPStatus.CONFLICT
     message = "Request conflicts with the current state"
+
+
+class UnprocessableError(AppError):
+    """The request is well-formed but refers to something invalid (e.g. a missing category)."""
+
+    status_code = HTTPStatus.UNPROCESSABLE_ENTITY
+    message = "Request contains invalid references"

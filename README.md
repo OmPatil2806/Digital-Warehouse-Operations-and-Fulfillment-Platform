@@ -2,9 +2,9 @@
 
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.1.0-blue)
+![Version](https://img.shields.io/badge/version-v0.2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
-![Node](https://img.shields.io/badge/node-22_LTS-339933?logo=nodedotjs&logoColor=white)
+![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A full-stack platform that digitises the core operations of a modern distribution warehouse, from goods receipt to shipment, and adds a machine-learning decision-support layer built with **TensorFlow/Keras**.
@@ -12,7 +12,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 1 (project foundation) is complete: `v0.1.0`.** See the [Roadmap](#roadmap).
+> **Phase 2 (authentication & authorization) is complete: `v0.2.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -68,6 +68,51 @@ The platform manages products, suppliers, physical storage locations, inventory,
 
 ---
 
+## Authentication & Roles
+
+### How login works
+
+- **Access token**: a short-lived JWT (30 min) returned by `POST /auth/login`. The frontend keeps it **in memory only** and sends it as `Authorization: Bearer <token>`.
+- **Refresh token**: a long-lived random token (7 days) set as an **httpOnly, SameSite=Lax cookie** that JavaScript cannot read. Only its SHA-256 hash is stored in the database.
+- **Rotation**: every refresh replaces the refresh token. If an old, already-used refresh token is presented again (a sign of theft), **all sessions of that user are revoked**.
+- The frontend refreshes automatically on a `401` (one shared refresh for parallel requests) and restores the session after a page reload.
+- Passwords are hashed with **bcrypt** (via `pwdlib`). Policy: 8+ characters, max 72 bytes, at least one letter and one digit.
+- Outside `development`/`test`, the API refuses to start with the default `SECRET_KEY`.
+
+### Auth endpoints (`/api/v1/auth`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/auth/login` | Email + password → access token; sets the refresh cookie |
+| `POST` | `/auth/refresh` | New access token from the refresh cookie (rotates the cookie) |
+| `POST` | `/auth/logout` | Revokes the current session and clears the cookie |
+| `GET` | `/auth/me` | The logged-in user |
+
+### User management (`/api/v1/users`, admin only)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/users?offset=0&limit=50` | Paginated user list |
+| `POST` | `/users` | Create a user (default role: customer) |
+| `GET` | `/users/{id}` | Get a user |
+| `PATCH` | `/users/{id}` | Partial update (email, name, password, roles, active). A password change ends all the user's sessions |
+| `POST` | `/users/{id}/deactivate` | Block login and end all sessions immediately |
+
+Safety rules: an admin cannot deactivate themselves or remove their own admin role, and the last active admin can never be removed.
+
+### Roles
+
+| Role | Responsibilities | Sees in the app (pages arrive in later phases) |
+|------|------------------|------------------------------------------------|
+| **Admin** | Users, roles, settings, audit, ML models | Everything (admins pass every role check) |
+| **Manager** | KPIs, approvals, ML recommendations | Products, Suppliers, Warehouse layout, Inventory, Orders, Fulfillment, Shipments, Alerts, ML insights |
+| **Staff** | Receiving, picking, packing, scanning | Products, Warehouse layout, Inventory, Orders, Fulfillment, Shipments |
+| **Customer** | Placing and tracking orders | Orders, Shipments |
+
+The backend enforces roles with `require_roles(...)` on each endpoint; the frontend hides navigation and guards routes with `<ProtectedRoute roles={[...]}>`.
+
+---
+
 ## Architecture
 
 ```
@@ -99,8 +144,8 @@ The platform manages products, suppliers, physical storage locations, inventory,
 The project is delivered in **10 phases**. Each phase ends with passing CI and a tagged release.
 
 - [x] **Phase 1: Project foundation**: running skeleton of frontend, backend, database and CI (`v0.1.0`) ✅
-- [ ] **Phase 2: Authentication & authorization**: secure login and role-based access (`v0.2.0`) ⏭️ *next*
-- [ ] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`)
+- [x] **Phase 2: Authentication & authorization**: secure login and role-based access (`v0.2.0`) ✅
+- [ ] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ⏭️ *next*
 - [ ] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`)
 - [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`)
 - [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`)
@@ -120,10 +165,15 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   └── frontend-ci.yml       # lint, type-check, test and build the UI
 ├── backend/
 │   ├── app/
-│   │   ├── main.py           # FastAPI application (CORS, /api/v1 router)
-│   │   ├── core/             # settings (.env) and logging
-│   │   ├── database/         # SQLAlchemy base, engine and session
-│   │   └── api/v1/           # versioned REST endpoints (health)
+│   │   ├── main.py           # FastAPI application (CORS, error handlers, /api/v1 router)
+│   │   ├── core/             # settings (.env), logging, security (hashing, JWT), permissions
+│   │   ├── database/         # SQLAlchemy base, engine, session and UTC datetime type
+│   │   ├── models/           # ORM tables (users, roles, user_roles, refresh_tokens)
+│   │   ├── schemas/          # Pydantic request/response models
+│   │   ├── repositories/     # database queries (no business rules)
+│   │   ├── services/         # business logic (auth, user management)
+│   │   ├── exceptions/       # application errors → JSON responses
+│   │   └── api/              # dependencies (current user) and v1 endpoints (health, auth, users)
 │   ├── migrations/           # Alembic database migrations
 │   ├── tests/                # Pytest tests (temporary test database)
 │   ├── alembic.ini
@@ -132,19 +182,27 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   └── requirements-dev.txt  # + test and quality tools
 ├── frontend/
 │   ├── src/
-│   │   ├── api/              # Axios client and typed API calls
-│   │   ├── components/       # reusable UI components
+│   │   ├── api/              # Axios client (token + auto-refresh), typed API calls
+│   │   ├── components/       # reusable UI components; layout/ = sidebar, top bar, navigation
+│   │   ├── context/          # AuthProvider (current user, login, logout)
+│   │   ├── hooks/            # useAuth
+│   │   ├── layouts/          # AuthLayout (login) and DashboardLayout (sidebar + top bar)
+│   │   ├── pages/            # Login, Dashboard, 403, 404
+│   │   ├── routes/           # AppRoutes and ProtectedRoute
 │   │   ├── types/            # TypeScript types mirroring API schemas
-│   │   ├── test/             # Vitest setup and test fixtures
+│   │   ├── utils/            # helpers (role checks)
+│   │   ├── test/             # Vitest setup, fixtures and render helpers
 │   │   └── App.tsx
 │   ├── package.json
 │   └── vite.config.ts / vitest.config.ts / eslint.config.js
+├── scripts/
+│   └── create_admin.py       # create the first administrator
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)
 └── LICENSE
 ```
 
-Planned for later phases: `ml/` (data generation, features, models, training, evaluation), `scripts/` and `docs/`.
+Planned for later phases: `ml/` (data generation, features, models, training, evaluation) and `docs/`.
 
 ---
 
@@ -156,7 +214,7 @@ Planned for later phases: `ml/` (data generation, features, models, training, ev
 |------|---------|-------|
 | Git | any recent | `git --version` |
 | Python | 3.12 | `python --version` |
-| Node.js | 20.19+ or 22 LTS | `node --version` |
+| Node.js | 22.22+ (22 or 24 LTS) | `node --version` |
 
 ### 1. Clone the repository
 
@@ -175,7 +233,11 @@ Copy-Item .env.example .env
 cp .env.example .env
 ```
 
-The defaults work for local development. Change `SECRET_KEY` before any real use.
+The defaults work for local development. For anything beyond local development, set a strong `SECRET_KEY`:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(64))"
+```
 
 ### 3. Backend setup
 
@@ -192,14 +254,21 @@ source .venv/bin/activate
 # Install dependencies
 pip install -r backend/requirements-dev.txt
 
-# Create / upgrade the database and start the API
+# Create / upgrade the database
 cd backend
 alembic upgrade head
+cd ..
+
+# Create the first administrator (asks for email, name and a hidden password)
+python scripts/create_admin.py
+
+# Start the API
+cd backend
 uvicorn app.main:app --reload
 ```
 
 - Health check: <http://localhost:8000/api/v1/health>
-- Interactive API docs (Swagger): <http://localhost:8000/docs>
+- Interactive API docs (Swagger): <http://localhost:8000/docs>. Log in with `POST /api/v1/auth/login`, then click **Authorize** and paste the `access_token` to call protected endpoints.
 
 ### 4. Frontend setup (in a second terminal)
 
@@ -209,7 +278,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>. The **System status** card shows **Online** when the backend and database are reachable.
+Open <http://localhost:5173> and sign in with the admin account. Create more users (manager, staff, customer) with `POST /api/v1/users` in Swagger to see how navigation changes per role.
 
 ---
 
@@ -239,7 +308,7 @@ Every push and pull request to `main` runs **GitHub Actions**:
 
 | Workflow | Runs when | Steps |
 |----------|-----------|-------|
-| Backend CI | `backend/**` changes | Ruff → Black → Pytest → Alembic migrations → API smoke test |
+| Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest → Vite build |
 
 ---

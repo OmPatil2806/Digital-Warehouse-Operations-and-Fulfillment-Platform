@@ -38,16 +38,18 @@ interface Options {
   auth?: AuthContextValue
   /** URL the router starts at. */
   path?: string
+  /** Router location state, e.g. { from: { pathname: '/orders' } } after a redirect to login. */
+  state?: unknown
   /** Extra routes, e.g. to detect redirects: { '/login': <p>login page</p> } */
   routes?: Record<string, ReactElement>
 }
 
 /** Render `ui` at `path` inside a router, with a fake auth context. */
 export function renderWithAuth(ui: ReactElement, options: Options = {}) {
-  const { auth = makeAuth(), path = '/', routes = {} } = options
+  const { auth = makeAuth(), path = '/', state, routes = {} } = options
   return render(
     <AuthContext value={auth}>
-      <MemoryRouter initialEntries={[path]}>
+      <MemoryRouter initialEntries={[{ pathname: path, state }]}>
         <Routes>
           <Route path={path} element={ui} />
           {Object.entries(routes).map(([routePath, element]) => (

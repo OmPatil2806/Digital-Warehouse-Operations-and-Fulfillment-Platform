@@ -67,8 +67,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             <LogOut size={16} aria-hidden="true" />
-            <span className="hidden sm:inline">Log out</span>
-            <span className="sr-only sm:hidden">Log out</span>
+            {/* One label: read by screen readers always, visible from the `sm` width up */}
+            <span className="sr-only sm:not-sr-only">Log out</span>
           </button>
         </div>
       )}

@@ -1,6 +1,6 @@
 [project]
 name = "warehouse-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "FastAPI backend for the Digital Warehouse Operations and Fulfillment Platform"
 requires-python = ">=3.12"
 

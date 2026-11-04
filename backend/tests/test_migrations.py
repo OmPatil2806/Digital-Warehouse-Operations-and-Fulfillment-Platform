@@ -12,6 +12,8 @@ from app.database.base import Base
 from tests.conftest import make_alembic_config
 
 AUTH_TABLES = {"users", "roles", "user_roles", "refresh_tokens"}
+CATALOG_TABLES = {"categories", "products", "suppliers", "supplier_products"}
+ALL_TABLES = AUTH_TABLES | CATALOG_TABLES
 
 
 def _url(tmp_path: Path) -> str:
@@ -24,13 +26,13 @@ def test_upgrade_and_downgrade_round_trip(tmp_path: Path) -> None:
     engine = create_engine(url)
 
     command.upgrade(config, "head")
-    assert set(inspect(engine).get_table_names()) >= AUTH_TABLES
+    assert set(inspect(engine).get_table_names()) >= ALL_TABLES
 
     command.downgrade(config, "base")
     assert set(inspect(engine).get_table_names()) <= {"alembic_version"}
 
     command.upgrade(config, "head")  # can be applied again after a downgrade
-    assert set(inspect(engine).get_table_names()) >= AUTH_TABLES
+    assert set(inspect(engine).get_table_names()) >= ALL_TABLES
     engine.dispose()
 
 

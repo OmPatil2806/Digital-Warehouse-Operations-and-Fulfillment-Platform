@@ -8,6 +8,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.types import TypeEngine
 
 from app import models  # noqa: F401  (registers every table on Base.metadata)
 from app.core.config import get_settings
@@ -26,6 +27,18 @@ if not config.get_main_option("sqlalchemy.url"):
 target_metadata = Base.metadata
 
 
+def render_item(type_: str, obj: object, autogen_context: object) -> str | bool:
+    """Write custom column types as their plain storage type in migration files.
+
+    Migrations must not import application code (it changes over time), so e.g.
+    `ScaledDecimal(scale=2)` is written as `sa.Integer()`, which is how it is stored.
+    """
+    if type_ == "type" and isinstance(obj, TypeEngine) and hasattr(obj, "impl"):
+        impl = obj.impl if isinstance(obj.impl, TypeEngine) else obj.impl()
+        return f"sa.{impl!r}"
+    return False
+
+
 def run_migrations_offline() -> None:
     """Generate SQL scripts without connecting to the database."""
     context.configure(
@@ -35,6 +48,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         render_as_batch=True,  # required for ALTER TABLE support in SQLite
         compare_type=True,
+        render_item=render_item,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -55,6 +69,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             render_as_batch=True,  # required for ALTER TABLE support in SQLite
             compare_type=True,
+            render_item=render_item,
         )
         with context.begin_transaction():
             context.run_migrations()

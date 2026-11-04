@@ -90,3 +90,12 @@ class UserResponse(BaseModel):
     def _role_names(cls, roles: list[object]) -> list[str]:
         """Accept Role objects (from the ORM) or plain names, return sorted names."""
         return sorted(getattr(role, "name", role) for role in roles)  # type: ignore[misc]
+
+
+class UserListResponse(BaseModel):
+    """One page of users."""
+
+    items: list[UserResponse]
+    total: int
+    offset: int
+    limit: int

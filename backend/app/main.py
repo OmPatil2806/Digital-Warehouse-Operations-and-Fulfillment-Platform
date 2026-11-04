@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
+from app.exceptions.handlers import register_exception_handlers
 
 API_V1_PREFIX = "/api/v1"
 
@@ -36,6 +37,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    register_exception_handlers(app)
     app.include_router(api_router, prefix=API_V1_PREFIX)
 
     logger.info(

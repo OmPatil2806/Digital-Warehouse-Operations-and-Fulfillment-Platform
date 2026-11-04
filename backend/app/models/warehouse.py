@@ -111,8 +111,10 @@ class Rack(IdMixin, TimestampMixin, Base):
 class Shelf(IdMixin, TimestampMixin, Base):
     __tablename__ = "shelves"
     __table_args__ = (
-        UniqueConstraint("rack_id", "code"),
-        UniqueConstraint("rack_id", "level"),
+        # Explicit names: the naming convention only uses the FIRST column, which would give
+        # both constraints the same name ("uq_shelves_rack_id").
+        UniqueConstraint("rack_id", "code", name="uq_shelves_rack_id_code"),
+        UniqueConstraint("rack_id", "level", name="uq_shelves_rack_id_level"),
         CheckConstraint("level >= 1", name="level_positive"),
     )
 

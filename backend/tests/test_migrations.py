@@ -49,3 +49,30 @@ def test_models_match_migrations(tmp_path: Path) -> None:
     engine.dispose()
 
     assert differences == []
+
+
+def test_constraint_and_index_names_are_unique_in_the_models() -> None:
+    """Two constraints with the same name shadow each other (this once made the drift test
+    flaky). The naming convention only uses the FIRST column of a unique constraint, so
+    multi-column constraints that start with the same column need explicit names."""
+    names = [
+        item.name
+        for table in Base.metadata.tables.values()
+        for item in [*table.constraints, *table.indexes]
+        if item.name
+    ]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+
+    assert duplicates == []
+
+
+def test_constraint_names_are_unique_in_the_migrated_database(tmp_path: Path) -> None:
+    url = _url(tmp_path)
+    command.upgrade(make_alembic_config(url), "head")
+    engine = create_engine(url)
+    inspector = inspect(engine)
+
+    for table in inspector.get_table_names():
+        names = [c["name"] for c in inspector.get_unique_constraints(table) if c["name"]]
+        assert len(names) == len(set(names)), f"duplicate unique constraint names in {table}"
+    engine.dispose()

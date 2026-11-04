@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, DbSession
-from app.api.v1.catalog_access import CatalogEditor, is_warehouse_user
+from app.api.v1.access import CatalogEditor, is_warehouse_user
 from app.exceptions import NotFoundError
 from app.models.catalog import Category
 from app.schemas.catalog import CategoryCreate, CategoryResponse, CategoryUpdate

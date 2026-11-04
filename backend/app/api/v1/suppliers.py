@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import DbSession
-from app.api.v1.catalog_access import CatalogEditor, WarehouseReader
+from app.api.v1.access import CatalogEditor, WarehouseReader
 from app.schemas.catalog import (
     SupplierCreate,
     SupplierProductCreate,

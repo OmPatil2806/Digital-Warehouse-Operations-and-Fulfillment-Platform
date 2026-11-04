@@ -28,16 +28,17 @@ describe('DashboardPage', () => {
     mockedGetHealth.mockReset()
   })
 
-  it('greets the user and logs out', async () => {
+  it('greets the user and lists only the modules for their roles', () => {
     mockedGetHealth.mockResolvedValue(makeHealthResponse())
-    const user = userEvent.setup()
 
     renderPage()
 
     expect(screen.getByRole('heading', { name: 'Welcome, Maya Manager' })).toBeInTheDocument()
-    expect(screen.getByText(/roles: manager, staff/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Log out' }))
-    expect(auth.logout).toHaveBeenCalledOnce()
+    const modules = screen.getByRole('region', { name: 'Your modules' })
+    expect(modules).toHaveTextContent('Products')
+    expect(modules).toHaveTextContent('Suppliers') // manager-only
+    expect(modules).not.toHaveTextContent('Users') // admin-only
+    expect(modules).toHaveTextContent('Phase 3')
   })
 
   it('shows "Checking…" while the request is pending', () => {

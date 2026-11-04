@@ -1,27 +1,49 @@
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getHealth } from './api/healthApi'
-import App from './App'
-import { makeHealthResponse } from './test/fixtures'
+import { getHealth } from '../api/healthApi'
+import { makeHealthResponse } from '../test/fixtures'
+import { makeAuth, makeUser, renderWithAuth } from '../test/renderWithAuth'
+import DashboardPage from './DashboardPage'
 
 // Replace the real API call with a mock, so tests never need a running backend.
-vi.mock('./api/healthApi', () => ({ getHealth: vi.fn() }))
+vi.mock('../api/healthApi', () => ({ getHealth: vi.fn() }))
+
+const auth = makeAuth({
+  status: 'authenticated',
+  user: makeUser({ full_name: 'Maya Manager', roles: ['manager', 'staff'] }),
+})
+
+function renderPage() {
+  return renderWithAuth(<DashboardPage />, { auth })
+}
 const mockedGetHealth = vi.mocked(getHealth)
 
 const networkError = () => new AxiosError('Network Error', 'ERR_NETWORK')
 
-describe('App health status', () => {
+describe('DashboardPage', () => {
   beforeEach(() => {
     mockedGetHealth.mockReset()
+  })
+
+  it('greets the user and logs out', async () => {
+    mockedGetHealth.mockResolvedValue(makeHealthResponse())
+    const user = userEvent.setup()
+
+    renderPage()
+
+    expect(screen.getByRole('heading', { name: 'Welcome, Maya Manager' })).toBeInTheDocument()
+    expect(screen.getByText(/roles: manager, staff/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Log out' }))
+    expect(auth.logout).toHaveBeenCalledOnce()
   })
 
   it('shows "Checking…" while the request is pending', () => {
     mockedGetHealth.mockReturnValue(new Promise(() => {})) // never resolves
 
-    render(<App />)
+    renderPage()
 
     expect(screen.getByTestId('backend-status')).toHaveTextContent('Checking…')
     expect(screen.getByRole('button', { name: 'Check again' })).toBeDisabled()
@@ -30,7 +52,7 @@ describe('App health status', () => {
   it('shows "Online" with details when the API is healthy', async () => {
     mockedGetHealth.mockResolvedValue(makeHealthResponse())
 
-    render(<App />)
+    renderPage()
 
     expect(await screen.findByText('Online')).toBeInTheDocument()
     expect(screen.getByText('Connected')).toBeInTheDocument()
@@ -44,7 +66,7 @@ describe('App health status', () => {
       makeHealthResponse({ status: 'degraded', database: 'unavailable' }),
     )
 
-    render(<App />)
+    renderPage()
 
     expect(await screen.findByText('Degraded')).toBeInTheDocument()
     expect(screen.getByText('Unavailable')).toBeInTheDocument()
@@ -53,7 +75,7 @@ describe('App health status', () => {
   it('shows "Offline" with a helpful message when the API cannot be reached', async () => {
     mockedGetHealth.mockRejectedValue(networkError())
 
-    render(<App />)
+    renderPage()
 
     expect(await screen.findByText('Offline')).toBeInTheDocument()
     expect(screen.getByText(/Cannot reach the server/)).toBeInTheDocument()
@@ -65,7 +87,7 @@ describe('App health status', () => {
       .mockRejectedValueOnce(networkError())
       .mockResolvedValueOnce(makeHealthResponse())
 
-    render(<App />)
+    renderPage()
     expect(await screen.findByText('Offline')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Check again' }))

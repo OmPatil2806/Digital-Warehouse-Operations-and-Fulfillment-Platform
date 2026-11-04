@@ -7,17 +7,20 @@ import { getHealth } from '../api/healthApi'
 import { AuthContext, type AuthContextValue } from '../context/authContext'
 import { makeHealthResponse } from '../test/fixtures'
 import { loggedInAs, makeAuth } from '../test/renderWithAuth'
+import { TestProviders } from '../test/TestProviders'
 import { AppRoutes } from './AppRoutes'
 
 vi.mock('../api/healthApi', () => ({ getHealth: vi.fn() }))
 
 function renderApp(path: string, auth: AuthContextValue) {
   return render(
-    <AuthContext value={auth}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-      </MemoryRouter>
-    </AuthContext>,
+    <TestProviders>
+      <AuthContext value={auth}>
+        <MemoryRouter initialEntries={[path]}>
+          <AppRoutes />
+        </MemoryRouter>
+      </AuthContext>
+    </TestProviders>,
   )
 }
 

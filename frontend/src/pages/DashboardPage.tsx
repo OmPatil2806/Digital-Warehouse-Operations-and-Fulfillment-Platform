@@ -1,39 +1,20 @@
-import { useEffect, useState } from 'react'
-
-import { getErrorMessage } from '../api/apiClient'
 import { getHealth } from '../api/healthApi'
 import { HealthStatusCard, type HealthState } from '../components/common/HealthStatusCard'
 import { CURRENT_PHASE, NAV_SECTIONS } from '../components/layout/navigation'
+import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
 import { hasAnyRole } from '../utils/roles'
 
 /** Home page after login. Phase 2: greeting, the user's modules and system status. */
 export default function DashboardPage() {
   const { user } = useAuth()
-  const [health, setHealth] = useState<HealthState>({ kind: 'loading' })
-  // Incrementing this re-runs the health check effect ("Check again" button)
-  const [checkCount, setCheckCount] = useState(0)
-
-  useEffect(() => {
-    let ignore = false // avoid updating state from an outdated request
-
-    getHealth()
-      .then((data) => {
-        if (!ignore) setHealth({ kind: 'online', data })
-      })
-      .catch((error: unknown) => {
-        if (!ignore) setHealth({ kind: 'offline', message: getErrorMessage(error) })
-      })
-
-    return () => {
-      ignore = true
-    }
-  }, [checkCount])
-
-  const handleRefresh = () => {
-    setHealth({ kind: 'loading' })
-    setCheckCount((count) => count + 1)
-  }
+  const healthQuery = useApiQuery(['health'], getHealth)
+  const health: HealthState =
+    healthQuery.isFetching || healthQuery.isPending
+      ? { kind: 'loading' }
+      : healthQuery.data
+        ? { kind: 'online', data: healthQuery.data }
+        : { kind: 'offline', message: healthQuery.errorMessage ?? 'Unknown error' }
 
   const modules = NAV_SECTIONS.flatMap((section) => section.items).filter(
     (item) => item.to !== '/' && (!item.roles || hasAnyRole(user, item.roles)),
@@ -74,7 +55,7 @@ export default function DashboardPage() {
         </section>
 
         <div>
-          <HealthStatusCard state={health} onRefresh={handleRefresh} />
+          <HealthStatusCard state={health} onRefresh={() => void healthQuery.refetch()} />
         </div>
       </div>
     </div>

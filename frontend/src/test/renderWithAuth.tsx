@@ -5,6 +5,7 @@ import { vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../context/authContext'
 import type { Role, User } from '../types/auth'
+import { TestProviders } from './TestProviders'
 
 export function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -48,15 +49,17 @@ interface Options {
 export function renderWithAuth(ui: ReactElement, options: Options = {}) {
   const { auth = makeAuth(), path = '/', state, routes = {} } = options
   return render(
-    <AuthContext value={auth}>
-      <MemoryRouter initialEntries={[{ pathname: path, state }]}>
-        <Routes>
-          <Route path={path} element={ui} />
-          {Object.entries(routes).map(([routePath, element]) => (
-            <Route key={routePath} path={routePath} element={element} />
-          ))}
-        </Routes>
-      </MemoryRouter>
-    </AuthContext>,
+    <TestProviders>
+      <AuthContext value={auth}>
+        <MemoryRouter initialEntries={[{ pathname: path, state }]}>
+          <Routes>
+            <Route path={path} element={ui} />
+            {Object.entries(routes).map(([routePath, element]) => (
+              <Route key={routePath} path={routePath} element={element} />
+            ))}
+          </Routes>
+        </MemoryRouter>
+      </AuthContext>
+    </TestProviders>,
   )
 }

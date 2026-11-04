@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # bcrypt cost factor: each +1 doubles hashing time. 12 is a good default;
     # tests use a lower value to stay fast.
     bcrypt_rounds: int = Field(default=12, ge=4, le=16)
+    # Send the refresh-token cookie only over HTTPS. Leave unset to decide automatically:
+    # off for development/test (plain http://localhost), on everywhere else.
+    cookie_secure: bool | None = None
 
     # Comma-separated list, e.g. "http://localhost:5173,http://127.0.0.1:5173"
     cors_origins: str = "http://localhost:5173"
@@ -46,6 +49,7 @@ class Settings(BaseSettings):
         env_file=PROJECT_ROOT / ".env",
         env_file_encoding="utf-8",
         extra="ignore",  # the shared .env also contains frontend (VITE_) variables
+        env_ignore_empty=True,  # `NAME=` (empty) means "use the default"
     )
 
     @model_validator(mode="after")
@@ -60,6 +64,13 @@ class Settings(BaseSettings):
                 'python -c "import secrets; print(secrets.token_urlsafe(64))"'
             )
         return self
+
+    @property
+    def refresh_cookie_secure(self) -> bool:
+        """Whether the refresh-token cookie gets the `Secure` (HTTPS-only) flag."""
+        if self.cookie_secure is not None:
+            return self.cookie_secure
+        return self.app_env not in INSECURE_SECRET_ALLOWED_ENVS
 
     @property
     def is_sqlite(self) -> bool:

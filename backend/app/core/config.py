@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Digital Warehouse Operations and Fulfillment Platform"
     app_env: str = "development"
-    app_version: str = "0.2.0"
+    app_version: str = "0.3.0"
     log_level: str = "INFO"
 
     database_url: str = "sqlite:///./database/warehouse.db"

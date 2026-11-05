@@ -116,7 +116,14 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Administration',
     items: [
-      { label: 'Users', to: '/users', icon: Users, roles: ['admin'], availableInPhase: 3 },
+      {
+        label: 'Users',
+        to: '/users',
+        icon: Users,
+        roles: ['admin'],
+        availableInPhase: 3,
+        ready: true,
+      },
       {
         label: 'Settings',
         to: '/settings',

@@ -276,3 +276,32 @@ def test_nobody_can_deactivate_themselves_at_service_level(db_session: Session) 
         UserService(db_session).update_user(
             manager.id, UserUpdate(is_active=False), acting_user=manager
         )
+
+
+def test_list_users_search_and_filters(
+    client: TestClient, db_session: Session, admin: User
+) -> None:
+    create_user(db_session, "maya@example.com", full_name="Maya Manager", roles=(RoleName.MANAGER,))
+    create_user(db_session, "sam@example.com", full_name="Sam Staff", roles=(RoleName.STAFF,))
+    create_user(
+        db_session,
+        "gone@example.com",
+        full_name="Gone Staff",
+        roles=(RoleName.STAFF, RoleName.CUSTOMER),
+        is_active=False,
+    )
+
+    def emails(query: str) -> list[str]:
+        page = client.get(f"{USERS}?{query}", headers=auth(admin)).json()
+        assert page["total"] == len(page["items"])
+        return [u["email"] for u in page["items"]]
+
+    assert emails("q=MAYA") == ["maya@example.com"]  # email, case-insensitive
+    assert emails("q=staff") == ["sam@example.com", "gone@example.com"]  # name
+    assert emails("role=staff") == ["sam@example.com", "gone@example.com"]
+    assert emails("role=staff&is_active=true") == ["sam@example.com"]
+    assert emails("is_active=false") == ["gone@example.com"]
+    assert emails("role=customer") == ["gone@example.com"]  # any of the user's roles
+    assert emails("q=nobody") == []
+    assert emails("q=%25") == []  # a literal "%" is not a wildcard
+    assert client.get(f"{USERS}?role=god", headers=auth(admin)).status_code == 422

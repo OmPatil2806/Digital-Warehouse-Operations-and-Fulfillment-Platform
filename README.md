@@ -2,7 +2,7 @@
 
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.2.0-blue)
+![Version](https://img.shields.io/badge/version-v0.3.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -12,7 +12,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 2 (authentication & authorization) is complete: `v0.2.0`.** See the [Roadmap](#roadmap).
+> **Phase 3 (master data & warehouse layout) is complete: `v0.3.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -92,13 +92,15 @@ The platform manages products, suppliers, physical storage locations, inventory,
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/users?offset=0&limit=50` | Paginated user list |
+| `GET` | `/users?q=&role=&is_active=&offset=0&limit=50` | Paginated user list; search name/email, filter by role and status |
 | `POST` | `/users` | Create a user (default role: customer) |
 | `GET` | `/users/{id}` | Get a user |
 | `PATCH` | `/users/{id}` | Partial update (email, name, password, roles, active). A password change ends all the user's sessions |
 | `POST` | `/users/{id}/deactivate` | Block login and end all sessions immediately |
 
 Safety rules: an admin cannot deactivate themselves or remove their own admin role, and the last active admin can never be removed.
+
+In the web app, administrators manage accounts on the **Users** page (create, edit roles, reset password, deactivate / reactivate).
 
 ### Roles
 
@@ -110,6 +112,80 @@ Safety rules: an admin cannot deactivate themselves or remove their own admin ro
 | **Customer** | Placing and tracking orders | Orders, Shipments |
 
 The backend enforces roles with `require_roles(...)` on each endpoint; the frontend hides navigation and guards routes with `<ProtectedRoute roles={[...]}>`.
+
+---
+
+## Master Data & Warehouse Layout
+
+### Catalog endpoints
+
+| Area | Endpoints |
+|------|-----------|
+| Categories | `GET /categories` · `GET /categories/{id}` · `POST /categories` · `PATCH /categories/{id}` |
+| Products | `GET /products?q=&category_id=&supplier_id=&is_active=&sort=&offset=&limit=` · `GET /products/{id}` · `POST /products` · `PATCH /products/{id}` · `GET /products/{id}/suppliers` |
+| Suppliers | `GET /suppliers?q=&is_active=&sort=` · `GET /suppliers/{id}` · `POST /suppliers` · `PATCH /suppliers/{id}` |
+| Supplier offers | `GET /suppliers/{id}/products` · `POST /suppliers/{id}/products` · `PATCH` / `DELETE /suppliers/{id}/products/{product_id}` |
+
+- **Search** covers SKU, name, brand and barcode; the **category filter includes sub-categories**; sorting: `sku`, `name`, `unit_price`, `created_at` (prefix `-` for descending).
+- **Exact decimals**: money and measurements are stored as integers of the smallest unit (cents, grams, millimetres) and returned as strings, e.g. `"899.99"`.
+- **Nothing is deleted**: records are archived with `PATCH {"is_active": false}` and restored with `true`.
+- SKUs and supplier codes are unique (stored in upper case); duplicates return `409`, missing or archived references `422`.
+- A product has at most one **preferred supplier**.
+
+### Warehouse layout endpoints
+
+| Area | Endpoints |
+|------|-----------|
+| Warehouses | `GET /warehouses` · `POST /warehouses` · `GET` / `PATCH /warehouses/{id}` · `GET /warehouses/{id}/layout` (full tree with capacity totals) |
+| Zones | `POST /warehouses/{id}/zones` · `PATCH /zones/{id}` · `POST /zones/{id}/generate` (bulk racks × shelves × bins) |
+| Racks, shelves, bins | `POST /zones/{id}/racks` · `PATCH /racks/{id}` · `POST /racks/{id}/shelves` · `PATCH /shelves/{id}` · `POST /shelves/{id}/bins` · `PATCH /bins/{id}` |
+| Bin lookup | `GET /bins?q=&warehouse_id=&zone_id=` · `GET /bins/by-code/{code}` (scan) · `GET /bins/{id}/fit?product_id=&quantity=` (capacity check) |
+
+### Location codes
+
+Every bin has a unique location code built from its parents:
+
+```
+WH01 - ZA - R05 - S03 - B08
+ |     |    |     |     +-- bin    (B + 2–3 digits)
+ |     |    |     +-------- shelf  (S + 2 digits; level 1 = floor)
+ |     |    +-------------- rack   (R + 2–3 digits; has a distance to the packing station)
+ |     +------------------- zone   (Z + 1–2 letters; picking, bulk, cold, hazardous or returns)
+ +------------------------- warehouse (WH + 2–4 digits)
+```
+
+- Codes are fixed after creation (they are printed on labels).
+- **Bulk generation** creates up to 5,000 bins in one all-or-nothing transaction.
+- Archiving a zone or rack also archives everything below it; restoring works one level at a time.
+- Bins have a maximum weight and volume; `product_fits_bin()` checks capacity (used for put-away in Phase 4).
+
+### Permissions
+
+| Data | Read | Change |
+|------|------|--------|
+| Categories, products | every logged-in user (customers: active only, without costs) | admin, manager |
+| Suppliers and their offers | admin, manager, staff | admin, manager |
+| Warehouse layout | admin, manager, staff | admin, manager |
+| Users | admin | admin |
+
+### Demo data
+
+```bash
+# from the project root, after `alembic upgrade head`
+python scripts/seed_database.py           # add demo data (safe to run again)
+python scripts/seed_database.py --reset   # delete demo data and load it again (asks first)
+```
+
+Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers and warehouse **WH01** with 4 zones and 274 bins. Demo logins (development only):
+
+| Email | Role | Password |
+|-------|------|----------|
+| `admin@example.com` | Admin | `Demo-pass-123` |
+| `manager@example.com` | Manager | `Demo-pass-123` |
+| `staff@example.com` | Staff | `Demo-pass-123` |
+| `customer@example.com` | Customer | `Demo-pass-123` |
+
+`--reset` only works when `APP_ENV` is `development` or `test`, and keeps users that are not demo users.
 
 ---
 
@@ -145,8 +221,8 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 
 - [x] **Phase 1: Project foundation**: running skeleton of frontend, backend, database and CI (`v0.1.0`) ✅
 - [x] **Phase 2: Authentication & authorization**: secure login and role-based access (`v0.2.0`) ✅
-- [ ] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ⏭️ *next*
-- [ ] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`)
+- [x] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ✅
+- [ ] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ⏭️ *next*
 - [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`)
 - [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`)
 - [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`)
@@ -168,12 +244,12 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   │   ├── main.py           # FastAPI application (CORS, error handlers, /api/v1 router)
 │   │   ├── core/             # settings (.env), logging, security (hashing, JWT), permissions
 │   │   ├── database/         # SQLAlchemy base, engine, session and UTC datetime type
-│   │   ├── models/           # ORM tables (users, roles, user_roles, refresh_tokens)
+│   │   ├── models/           # ORM tables: users & roles, catalog (categories, products, suppliers), warehouse layout
 │   │   ├── schemas/          # Pydantic request/response models
 │   │   ├── repositories/     # database queries (no business rules)
-│   │   ├── services/         # business logic (auth, user management)
+│   │   ├── services/         # business logic (auth, users, catalog, warehouse layout, capacity)
 │   │   ├── exceptions/       # application errors → JSON responses
-│   │   └── api/              # dependencies (current user) and v1 endpoints (health, auth, users)
+│   │   └── api/              # dependencies, access rules and v1 endpoints (health, auth, users, catalog, warehouses)
 │   ├── migrations/           # Alembic database migrations
 │   ├── tests/                # Pytest tests (temporary test database)
 │   ├── alembic.ini
@@ -183,20 +259,21 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 ├── frontend/
 │   ├── src/
 │   │   ├── api/              # Axios client (token + auto-refresh), typed API calls
-│   │   ├── components/       # reusable UI components; layout/ = sidebar, top bar, navigation
-│   │   ├── context/          # AuthProvider (current user, login, logout)
-│   │   ├── hooks/            # useAuth
+│   │   ├── components/       # DataTable, Modal, form fields…; layout/, products/, suppliers/, warehouse/, users/
+│   │   ├── context/          # AuthProvider (current user, login, logout), ToastProvider
+│   │   ├── hooks/            # useAuth, useApiQuery / useApiMutation (TanStack Query), useUrlState, useToast
 │   │   ├── layouts/          # AuthLayout (login) and DashboardLayout (sidebar + top bar)
-│   │   ├── pages/            # Login, Dashboard, 403, 404
+│   │   ├── pages/            # Login, Dashboard, Products, Suppliers, Warehouse layout, Users, 403, 404
 │   │   ├── routes/           # AppRoutes and ProtectedRoute
 │   │   ├── types/            # TypeScript types mirroring API schemas
-│   │   ├── utils/            # helpers (role checks)
+│   │   ├── utils/            # helpers (roles, permissions, formatting, API errors)
 │   │   ├── test/             # Vitest setup, fixtures and render helpers
 │   │   └── App.tsx
 │   ├── package.json
 │   └── vite.config.ts / vitest.config.ts / eslint.config.js
 ├── scripts/
-│   └── create_admin.py       # create the first administrator
+│   ├── create_admin.py       # create the first administrator
+│   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)
 └── LICENSE
@@ -262,6 +339,9 @@ cd ..
 # Create the first administrator (asks for email, name and a hidden password)
 python scripts/create_admin.py
 
+# Optional: load demo data (products, suppliers, warehouse layout, demo users)
+python scripts/seed_database.py
+
 # Start the API
 cd backend
 uvicorn app.main:app --reload
@@ -278,7 +358,7 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:5173> and sign in with the admin account. Create more users (manager, staff, customer) with `POST /api/v1/users` in Swagger to see how navigation changes per role.
+Open <http://localhost:5173> and sign in with your admin account (or a [demo login](#demo-data)). Administrators create more users on the **Users** page; sign in with different roles to see how the navigation and permissions change.
 
 ---
 

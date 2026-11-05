@@ -16,6 +16,7 @@ const ProductDetailPage = lazy(() => import('../pages/ProductDetailPage'))
 const SuppliersPage = lazy(() => import('../pages/SuppliersPage'))
 const SupplierDetailPage = lazy(() => import('../pages/SupplierDetailPage'))
 const WarehouseLayoutPage = lazy(() => import('../pages/WarehouseLayoutPage'))
+const UsersPage = lazy(() => import('../pages/UsersPage'))
 
 /**
  * All page routes of the application.
@@ -41,6 +42,11 @@ export function AppRoutes() {
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/suppliers/:supplierId" element={<SupplierDetailPage />} />
             <Route path="/warehouse" element={<WarehouseLayoutPage />} />
+          </Route>
+
+          {/* Administrators only */}
+          <Route element={<ProtectedRoute roles={['admin']} />}>
+            <Route path="/users" element={<UsersPage />} />
           </Route>
 
           <Route path="/forbidden" element={<ForbiddenPage />} />

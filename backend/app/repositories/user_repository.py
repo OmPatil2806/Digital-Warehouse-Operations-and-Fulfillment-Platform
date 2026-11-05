@@ -7,7 +7,7 @@ business rules) is the job of the service layer.
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.models.user import RefreshToken, Role, RoleName, User
@@ -31,9 +31,41 @@ class UserRepository:
             query = query.where(User.id != exclude_user_id)
         return self.db.scalars(query).first() is not None
 
-    def list_users(self, *, offset: int = 0, limit: int = 50) -> Sequence[User]:
-        query = select(User).order_by(User.id).offset(offset).limit(limit)
-        return self.db.scalars(query).all()
+    def _filtered(self, *, q: str | None, role: str | None, is_active: bool | None) -> Select:
+        query = select(User)
+        if q:
+            # "%" and "_" typed by the user are literal characters, not wildcards
+            text = q.strip().lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            pattern = f"%{text}%"
+            query = query.where(
+                or_(
+                    func.lower(User.email).like(pattern, escape="\\"),
+                    func.lower(User.full_name).like(pattern, escape="\\"),
+                )
+            )
+        if role:
+            query = query.where(User.roles.any(Role.name == role))
+        if is_active is not None:
+            query = query.where(User.is_active.is_(is_active))
+        return query
+
+    def list_users(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        role: str | None = None,
+        is_active: bool | None = None,
+    ) -> Sequence[User]:
+        query = self._filtered(q=q, role=role, is_active=is_active).order_by(User.id)
+        return self.db.scalars(query.offset(offset).limit(limit)).all()
+
+    def count_filtered(
+        self, *, q: str | None = None, role: str | None = None, is_active: bool | None = None
+    ) -> int:
+        query = self._filtered(q=q, role=role, is_active=is_active)
+        return self.db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
     def count(self) -> int:
         return self.db.scalar(select(func.count()).select_from(User)) or 0

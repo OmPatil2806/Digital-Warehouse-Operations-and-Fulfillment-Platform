@@ -40,8 +40,20 @@ class UserService:
         self.users = UserRepository(db)
 
     # ------------------------------------------------------------------- read
-    def list_users(self, *, offset: int = 0, limit: int = 50) -> tuple[Sequence[User], int]:
-        return self.users.list_users(offset=offset, limit=limit), self.users.count()
+    def list_users(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        role: RoleName | None = None,
+        is_active: bool | None = None,
+    ) -> tuple[Sequence[User], int]:
+        filters = {"q": q, "role": role.value if role else None, "is_active": is_active}
+        return (
+            self.users.list_users(offset=offset, limit=limit, **filters),
+            self.users.count_filtered(**filters),
+        )
 
     def get_user(self, user_id: int) -> User:
         user = self.users.get_by_id(user_id)

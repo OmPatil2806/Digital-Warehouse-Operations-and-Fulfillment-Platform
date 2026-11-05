@@ -29,10 +29,15 @@ CONFLICT = {409: {"description": "Email already exists or a safety rule was viol
 @router.get("", response_model=UserListResponse, summary="List users")
 def list_users(
     db: DbSession,
+    q: Annotated[str | None, Query(max_length=100, description="Search in email and name")] = None,
+    role: Annotated[RoleName | None, Query(description="Only users with this role")] = None,
+    is_active: bool | None = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> UserListResponse:
-    users, total = UserService(db).list_users(offset=offset, limit=limit)
+    users, total = UserService(db).list_users(
+        offset=offset, limit=limit, q=q, role=role, is_active=is_active
+    )
     return UserListResponse(
         items=[UserResponse.model_validate(user) for user in users],
         total=total,

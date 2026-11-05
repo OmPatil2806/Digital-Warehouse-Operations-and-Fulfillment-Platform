@@ -82,3 +82,26 @@ class DecisionRequest(BaseModel):
 
 class RejectRequest(BaseModel):
     note: Reason  # the requester must learn why
+
+
+class CycleCountStart(BaseModel):
+    bin_id: int
+    note: OptionalReason | None = None
+
+
+class CycleCountEntry(BaseModel):
+    product_id: int
+    counted_quantity: Annotated[int, Field(ge=0, le=MAX_QUANTITY)]
+
+
+class CycleCountRecord(BaseModel):
+    """Counted quantities; may be sent several times while the count is open."""
+
+    lines: Annotated[list[CycleCountEntry], Field(min_length=1, max_length=500)]
+
+    @model_validator(mode="after")
+    def _one_entry_per_product(self) -> "CycleCountRecord":
+        ids = [line.product_id for line in self.lines]
+        if len(ids) != len(set(ids)):
+            raise ValueError("each product may appear only once")
+        return self

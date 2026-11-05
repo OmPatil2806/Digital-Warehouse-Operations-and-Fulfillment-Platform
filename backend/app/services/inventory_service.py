@@ -10,7 +10,7 @@ Each operation runs as ONE database transaction that
 and commits all of it together, or nothing at all.
 
 Quantity model: available = on_hand - reserved - damaged. All changes go through
-`_change`, which refuses any result where a number would become negative or reserved +
+`change`, which refuses any result where a number would become negative or reserved +
 damaged would exceed on_hand (the database enforces the same rule as a last line of
 defence). If another request changed the same row in the meantime, the optimistic lock
 (`Inventory.version`) makes the commit fail and the caller gets a 409 "please retry".
@@ -134,7 +134,7 @@ class InventoryService:
 
         row = self.repo.get_or_create_row(product.id, bin_.id)
         before = _quantities(row)
-        movement = self._change(
+        movement = self.change(
             row,
             MovementType.RECEIPT,
             data.quantity,
@@ -209,7 +209,7 @@ class InventoryService:
                 raise InsufficientStockError(f"There is no {product.sku} in {bin_.location_code}")
 
         before = _quantities(row)
-        movement = self._change(
+        movement = self.change(
             row,
             movement_type,
             quantity,
@@ -274,7 +274,7 @@ class InventoryService:
                 self.db.flush()
                 before = _quantities(row)
                 result.movements.append(
-                    self._change(
+                    self.change(
                         row,
                         MovementType.RESERVATION,
                         quantity,
@@ -352,7 +352,7 @@ class InventoryService:
         if row is None:  # cannot happen while the database rules hold
             raise ConflictError(f"Reservation {reservation.id} has no stock row")
         before = _quantities(row)
-        movement = self._change(
+        movement = self.change(
             row,
             MovementType.RELEASE,
             reservation.quantity,
@@ -445,7 +445,7 @@ class InventoryService:
         reference = (ReferenceType.TRANSFER, transfer.id)
         before_source, before_target = _quantities(source), _quantities(target)
         movements = [
-            self._change(
+            self.change(
                 source,
                 MovementType.TRANSFER_OUT,
                 quantity,
@@ -454,7 +454,7 @@ class InventoryService:
                 reason=transfer.reason,
                 user=user,
             ),
-            self._change(
+            self.change(
                 target,
                 MovementType.TRANSFER_IN,
                 quantity,
@@ -481,7 +481,7 @@ class InventoryService:
         return TransferResult(transfer=transfer, source=source, target=target, movements=movements)
 
     # ------------------------------------------------------- the one way to change
-    def _change(
+    def change(
         self,
         row: Inventory,
         movement_type: MovementType,

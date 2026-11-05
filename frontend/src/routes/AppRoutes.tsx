@@ -1,3 +1,4 @@
+import { lazy } from 'react'
 import { Route, Routes } from 'react-router'
 
 import AuthLayout from '../layouts/AuthLayout'
@@ -8,13 +9,16 @@ import LoginPage from '../pages/LoginPage'
 import NotFoundPage from '../pages/NotFoundPage'
 import { ProtectedRoute } from './ProtectedRoute'
 
+// Loaded on first visit (code splitting): the login page stays small and fast.
+// DashboardLayout shows a loading message (only in the page area) while they load.
+const ProductsPage = lazy(() => import('../pages/ProductsPage'))
+const ProductDetailPage = lazy(() => import('../pages/ProductDetailPage'))
+const SuppliersPage = lazy(() => import('../pages/SuppliersPage'))
+const SupplierDetailPage = lazy(() => import('../pages/SupplierDetailPage'))
+
 /**
  * All page routes of the application.
- *
- * Role-restricted pages (from Phase 3 on) are wrapped like this:
- *   <Route element={<ProtectedRoute roles={['manager']} />}>
- *     <Route path="/suppliers" element={<SuppliersPage />} />
- *   </Route>
+ * Role checks here only hide pages; the backend enforces the same rules on every request.
  */
 export function AppRoutes() {
   return (
@@ -28,6 +32,15 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route element={<DashboardLayout />}>
           <Route index element={<DashboardPage />} />
+
+          {/* Warehouse roles (admin, manager, staff) */}
+          <Route element={<ProtectedRoute roles={['manager', 'staff']} />}>
+            <Route path="/products" element={<ProductsPage />} />
+            <Route path="/products/:productId" element={<ProductDetailPage />} />
+            <Route path="/suppliers" element={<SuppliersPage />} />
+            <Route path="/suppliers/:supplierId" element={<SupplierDetailPage />} />
+          </Route>
+
           <Route path="/forbidden" element={<ForbiddenPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

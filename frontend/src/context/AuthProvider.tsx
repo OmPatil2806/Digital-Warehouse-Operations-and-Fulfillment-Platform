@@ -8,13 +8,18 @@ import { AuthContext, type AuthContextValue, type AuthStatus } from './authConte
 interface AuthState {
   status: AuthStatus
   user: User | null
+  endedByLogout: boolean
 }
 
-const ANONYMOUS: AuthState = { status: 'anonymous', user: null }
+const ANONYMOUS: AuthState = { status: 'anonymous', user: null, endedByLogout: false }
 
 /** Holds the logged-in user and exposes login/logout to the whole app. */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AuthState>({ status: 'loading', user: null })
+  const [state, setState] = useState<AuthState>({
+    status: 'loading',
+    user: null,
+    endedByLogout: false,
+  })
 
   // On page load: try to restore the session from the httpOnly refresh cookie.
   useEffect(() => {
@@ -23,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .refreshSession()
       .then(() => authApi.getCurrentUser())
       .then((user) => {
-        if (!ignore) setState({ status: 'authenticated', user })
+        if (!ignore) setState({ status: 'authenticated', user, endedByLogout: false })
       })
       .catch(() => {
         if (!ignore) setState(ANONYMOUS)
@@ -42,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (credentials: LoginCredentials) => {
     await authApi.login(credentials)
     const user = await authApi.getCurrentUser()
-    setState({ status: 'authenticated', user })
+    setState({ status: 'authenticated', user, endedByLogout: false })
   }, [])
 
   const logout = useCallback(async () => {
@@ -51,11 +56,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Server unreachable: the refresh token expires on its own; log out locally anyway.
     }
-    setState(ANONYMOUS)
+    setState({ ...ANONYMOUS, endedByLogout: true })
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status: state.status, user: state.user, login, logout }),
+    () => ({ ...state, login, logout }),
     [state, login, logout],
   )
 

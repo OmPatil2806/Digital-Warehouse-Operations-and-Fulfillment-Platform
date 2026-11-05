@@ -15,11 +15,12 @@ interface ProtectedRouteProps {
 /**
  * Guards pages that need a logged-in user:
  * - while the session is being restored: shows a loading screen,
- * - not logged in: redirects to /login (and back here after logging in),
+ * - not logged in: redirects to /login (and back here after logging in, unless the
+ *   user just clicked "Log out"),
  * - wrong role: redirects to /forbidden.
  */
 export function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
-  const { status, user } = useAuth()
+  const { status, user, endedByLogout } = useAuth()
   const location = useLocation()
 
   if (status === 'loading') {
@@ -30,7 +31,9 @@ export function ProtectedRoute({ roles, children }: ProtectedRouteProps) {
     )
   }
   if (status === 'anonymous' || !user) {
-    return <Navigate to="/login" replace state={{ from: location }} />
+    // Remember the requested page so login can return to it, except after a deliberate
+    // logout: the next person to log in must not land on the previous user's page.
+    return <Navigate to="/login" replace state={endedByLogout ? null : { from: location }} />
   }
   if (roles && !hasAnyRole(user, roles)) {
     return <Navigate to="/forbidden" replace />

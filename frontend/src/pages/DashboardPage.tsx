@@ -1,6 +1,6 @@
 import { getHealth } from '../api/healthApi'
 import { HealthStatusCard, type HealthState } from '../components/common/HealthStatusCard'
-import { CURRENT_PHASE, NAV_SECTIONS } from '../components/layout/navigation'
+import { isReady, NAV_SECTIONS } from '../components/layout/navigation'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
 import { hasAnyRole } from '../utils/roles'
@@ -36,18 +36,18 @@ export default function DashboardPage() {
             Your modules
           </h2>
           <ul className="mt-4 space-y-2 text-sm">
-            {modules.map(({ label, icon: Icon, availableInPhase }) => (
-              <li key={label} className="flex items-center gap-3">
-                <Icon size={16} className="text-slate-400" aria-hidden="true" />
-                <span className="flex-1">{label}</span>
+            {modules.map((item) => (
+              <li key={item.label} className="flex items-center gap-3">
+                <item.icon size={16} className="text-slate-400" aria-hidden="true" />
+                <span className="flex-1">{item.label}</span>
                 <span
                   className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    availableInPhase <= CURRENT_PHASE
+                    isReady(item)
                       ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-slate-100 text-slate-500'
                   }`}
                 >
-                  {availableInPhase <= CURRENT_PHASE ? 'Available' : `Phase ${availableInPhase}`}
+                  {isReady(item) ? 'Available' : `Phase ${item.availableInPhase}`}
                 </span>
               </li>
             ))}

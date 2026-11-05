@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react'
+import { useLocation } from 'react-router'
 import { describe, expect, it } from 'vitest'
 
 import { loggedInAs, makeAuth, renderWithAuth } from '../test/renderWithAuth'
@@ -6,6 +7,12 @@ import { ProtectedRoute } from './ProtectedRoute'
 
 const SECRET = <p>secret page</p>
 const routes = { '/login': <p>login page</p>, '/forbidden': <p>forbidden page</p> }
+
+/** Login stand-in that shows which page it would return to after logging in. */
+function LoginProbe() {
+  const from = (useLocation().state as { from?: { pathname: string } } | null)?.from
+  return <p>login page, return to: {from?.pathname ?? 'nothing'}</p>
+}
 
 describe('ProtectedRoute', () => {
   it('shows a loading screen while the session is being restored', () => {
@@ -47,5 +54,25 @@ describe('ProtectedRoute', () => {
     })
 
     expect(screen.getByText(expected)).toBeInTheDocument()
+  })
+
+  it('remembers the requested page when the session is missing or expired', () => {
+    renderWithAuth(<ProtectedRoute>{SECRET}</ProtectedRoute>, {
+      path: '/suppliers/10',
+      routes: { '/login': <LoginProbe /> },
+    })
+
+    expect(screen.getByText('login page, return to: /suppliers/10')).toBeInTheDocument()
+  })
+
+  it('does NOT remember the page after a deliberate logout', () => {
+    renderWithAuth(<ProtectedRoute>{SECRET}</ProtectedRoute>, {
+      auth: makeAuth({ status: 'anonymous', endedByLogout: true }),
+      path: '/suppliers/10',
+      routes: { '/login': <LoginProbe /> },
+    })
+
+    // The next person to log in starts on the dashboard, not on the previous user's page.
+    expect(screen.getByText('login page, return to: nothing')).toBeInTheDocument()
   })
 })

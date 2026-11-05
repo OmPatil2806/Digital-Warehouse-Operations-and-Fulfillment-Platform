@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
+import { useLocation } from 'react-router'
 
 import { ToastProvider } from '../context/ToastProvider'
 
@@ -16,5 +17,15 @@ export function TestProviders({ children }: { children: ReactNode }) {
     <QueryClientProvider client={client}>
       <ToastProvider>{children}</ToastProvider>
     </QueryClientProvider>
+  )
+}
+
+/** Shows the current URL (hidden) so tests can check what ended up in the address bar. */
+export function LocationProbe() {
+  const location = useLocation()
+  return (
+    <output data-testid="location" hidden>
+      {location.pathname + location.search}
+    </output>
   )
 }

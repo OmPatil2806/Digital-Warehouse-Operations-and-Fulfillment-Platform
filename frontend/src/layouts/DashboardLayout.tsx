@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { Outlet } from 'react-router'
 
 import { Sidebar } from '../components/layout/Sidebar'
@@ -45,7 +45,16 @@ export default function DashboardLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar onMenuClick={() => setMobileMenuOpen(true)} />
         <main className="flex-1 px-4 py-8 sm:px-8">
-          <Outlet />
+          {/* Lazy pages load here; sidebar and top bar stay visible meanwhile */}
+          <Suspense
+            fallback={
+              <p role="status" className="text-sm text-slate-500">
+                Loading…
+              </p>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

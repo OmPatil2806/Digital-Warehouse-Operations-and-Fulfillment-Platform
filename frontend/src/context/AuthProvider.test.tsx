@@ -23,11 +23,12 @@ const api = vi.mocked(authApi)
 
 /** Shows the auth state and offers login/logout buttons. */
 function Probe() {
-  const { status, user, login, logout } = useAuth()
+  const { status, user, endedByLogout, login, logout } = useAuth()
   return (
     <div>
       <p data-testid="status">{status}</p>
       <p data-testid="user">{user?.email ?? 'none'}</p>
+      <p data-testid="ended-by-logout">{String(endedByLogout)}</p>
       <button onClick={() => void login({ email: 'a@example.com', password: 'pw' })}>login</button>
       <button onClick={() => void logout()}>logout</button>
     </div>
@@ -93,6 +94,7 @@ describe('AuthProvider', () => {
 
     await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('anonymous'))
     expect(screen.getByTestId('user')).toHaveTextContent('none')
+    expect(screen.getByTestId('ended-by-logout')).toHaveTextContent('true')
   })
 
   it('logs out locally when the API client reports that the session expired', async () => {
@@ -106,6 +108,7 @@ describe('AuthProvider', () => {
     act(() => handler?.())
 
     expect(screen.getByTestId('status')).toHaveTextContent('anonymous')
+    expect(screen.getByTestId('ended-by-logout')).toHaveTextContent('false') // expired, not logout
   })
 
   it('useAuth outside the provider throws a clear error', () => {

@@ -94,17 +94,31 @@ describe('Sidebar', () => {
     expect(screen.getByText('Orders', { selector: 'p' })).toBeInTheDocument()
   })
 
-  it('only the Dashboard is a link; later-phase pages are disabled with a phase badge', () => {
+  it('ready pages are links; pages from later steps are disabled with a phase badge', () => {
     const { nav } = renderSidebar('manager')
 
     const links = within(nav).getAllByRole('link')
-    expect(links.map((link) => link.textContent)).toEqual(['Dashboard'])
-    expect(links[0]).toHaveAttribute('href', '/')
+    expect(links.map((link) => [link.textContent, link.getAttribute('href')])).toEqual([
+      ['Dashboard', '/'],
+      ['Products', '/products'],
+      ['Suppliers', '/suppliers'],
+    ])
 
-    const products = within(nav).getByText('Products').closest('[aria-disabled="true"]')
-    expect(products).not.toBeNull()
-    expect(products).toHaveAttribute('title', 'Coming in Phase 3')
-    expect(products).toHaveTextContent('P3')
+    const layout = within(nav).getByText('Warehouse layout').closest('[aria-disabled="true"]')
+    expect(layout).not.toBeNull()
+    expect(layout).toHaveAttribute('title', 'Coming in Phase 3')
+    expect(layout).toHaveTextContent('P3')
+  })
+
+  it('keeps a section highlighted on its detail pages', () => {
+    renderWithAuth(<Sidebar />, { auth: loggedInAs('manager'), path: '/products/12' })
+
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' })
+    expect(within(nav).getByRole('link', { name: 'Products' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    expect(within(nav).getByRole('link', { name: 'Dashboard' })).not.toHaveAttribute('aria-current')
   })
 
   it('marks the current page as active', () => {

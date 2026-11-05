@@ -5,7 +5,7 @@ import { vi } from 'vitest'
 
 import { AuthContext, type AuthContextValue } from '../context/authContext'
 import type { Role, User } from '../types/auth'
-import { TestProviders } from './TestProviders'
+import { LocationProbe, TestProviders } from './TestProviders'
 
 export function makeUser(overrides: Partial<User> = {}): User {
   return {
@@ -25,6 +25,7 @@ export function makeAuth(overrides: Partial<AuthContextValue> = {}): AuthContext
   return {
     status: 'anonymous',
     user: null,
+    endedByLogout: false,
     login: vi.fn().mockResolvedValue(undefined),
     logout: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -37,8 +38,10 @@ export function loggedInAs(...roles: Role[]): AuthContextValue {
 
 interface Options {
   auth?: AuthContextValue
-  /** URL the router starts at. */
+  /** URL the router starts at, e.g. "/products/7?tab=x". */
   path?: string
+  /** Route pattern for `ui` when it differs from `path`, e.g. "/products/:productId". */
+  route?: string
   /** Router location state, e.g. { from: { pathname: '/orders' } } after a redirect to login. */
   state?: unknown
   /** Extra routes, e.g. to detect redirects: { '/login': <p>login page</p> } */
@@ -47,17 +50,19 @@ interface Options {
 
 /** Render `ui` at `path` inside a router, with a fake auth context. */
 export function renderWithAuth(ui: ReactElement, options: Options = {}) {
-  const { auth = makeAuth(), path = '/', state, routes = {} } = options
+  const { auth = makeAuth(), path = '/', route, state, routes = {} } = options
+  const [pathname, search = ''] = path.split('?')
   return render(
     <TestProviders>
       <AuthContext value={auth}>
-        <MemoryRouter initialEntries={[{ pathname: path, state }]}>
+        <MemoryRouter initialEntries={[{ pathname, search: search ? `?${search}` : '', state }]}>
           <Routes>
-            <Route path={path} element={ui} />
+            <Route path={route ?? pathname} element={ui} />
             {Object.entries(routes).map(([routePath, element]) => (
               <Route key={routePath} path={routePath} element={element} />
             ))}
           </Routes>
+          <LocationProbe />
         </MemoryRouter>
       </AuthContext>
     </TestProviders>,

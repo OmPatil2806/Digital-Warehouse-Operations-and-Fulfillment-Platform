@@ -3,7 +3,7 @@ import { NavLink } from 'react-router'
 
 import { useAuth } from '../../hooks/useAuth'
 import { hasAnyRole } from '../../utils/roles'
-import { CURRENT_PHASE, NAV_SECTIONS, type NavItem, type NavSection } from './navigation'
+import { isReady, NAV_SECTIONS, type NavItem, type NavSection } from './navigation'
 
 interface SidebarProps {
   /** Called after a link is clicked (closes the mobile menu). */
@@ -60,7 +60,7 @@ function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
   const Icon = item.icon
   const base = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium'
 
-  if (item.availableInPhase > CURRENT_PHASE) {
+  if (!isReady(item)) {
     return (
       <span
         aria-disabled="true"
@@ -79,7 +79,7 @@ function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
   return (
     <NavLink
       to={item.to}
-      end
+      end={item.to === '/'} // other links stay active on their detail pages (/products/12)
       onClick={onNavigate}
       className={({ isActive }) =>
         `${base} transition-colors ${

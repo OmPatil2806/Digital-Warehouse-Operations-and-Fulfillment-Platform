@@ -14,7 +14,16 @@ from tests.conftest import make_alembic_config
 AUTH_TABLES = {"users", "roles", "user_roles", "refresh_tokens"}
 CATALOG_TABLES = {"categories", "products", "suppliers", "supplier_products"}
 WAREHOUSE_TABLES = {"warehouses", "zones", "racks", "shelves", "bins"}
-ALL_TABLES = AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES
+INVENTORY_TABLES = {
+    "inventory",
+    "inventory_movements",
+    "stock_transfers",
+    "stock_adjustments",
+    "stock_reservations",
+    "cycle_counts",
+    "cycle_count_lines",
+}
+ALL_TABLES = AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES
 
 
 def _url(tmp_path: Path) -> str:
@@ -28,6 +37,12 @@ def test_upgrade_and_downgrade_round_trip(tmp_path: Path) -> None:
 
     command.upgrade(config, "head")
     assert set(inspect(engine).get_table_names()) >= ALL_TABLES
+
+    with engine.connect() as connection:
+        triggers = connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger'"
+        ).scalars()
+        assert set(triggers) >= {"inventory_movements_no_update", "inventory_movements_no_delete"}
 
     command.downgrade(config, "base")
     assert set(inspect(engine).get_table_names()) <= {"alembic_version"}

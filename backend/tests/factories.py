@@ -10,6 +10,7 @@ from app.repositories.user_repository import UserRepository
 
 if TYPE_CHECKING:
     from app.models.catalog import Category, Product, Supplier
+    from app.models.warehouse import Bin
 
 DEFAULT_PASSWORD = "Passw0rd-123"
 
@@ -91,3 +92,47 @@ def create_product(
     db.add(product)
     db.commit()
     return product
+
+
+# -------------------------------------------------------------------- warehouse helpers
+def create_bin(
+    db: Session,
+    location: str = "WH01-ZA-R01-S01-B01",
+    *,
+    max_weight_kg: str = "100.000",
+    max_volume_cm3: int = 1_000_000,
+) -> "Bin":
+    """Insert a bin, and any missing parents, from a location code like WH01-ZA-R01-S01-B01."""
+    from decimal import Decimal
+
+    from sqlalchemy import func, select
+
+    from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone
+
+    wh_code, zone_code, rack_code, shelf_code, bin_code = location.split("-")
+
+    def get_or_add(model: type, keys: dict[str, object], **extra: object) -> object:
+        found = db.scalar(select(model).filter_by(**keys))
+        if found is None:
+            found = model(**keys, **extra)
+            db.add(found)
+            db.flush()
+        return found
+
+    warehouse = get_or_add(Warehouse, {"code": wh_code}, name=f"Warehouse {wh_code}")
+    zone = get_or_add(
+        Zone, {"warehouse_id": warehouse.id, "code": zone_code}, name=zone_code, zone_type="picking"
+    )
+    rack = get_or_add(Rack, {"zone_id": zone.id, "code": rack_code})
+    next_level = (db.scalar(select(func.max(Shelf.level)).filter_by(rack_id=rack.id)) or 0) + 1
+    shelf = get_or_add(Shelf, {"rack_id": rack.id, "code": shelf_code}, level=next_level)
+    bin_ = Bin(
+        shelf_id=shelf.id,
+        code=bin_code,
+        location_code=location,
+        max_weight_kg=Decimal(max_weight_kg),
+        max_volume_cm3=max_volume_cm3,
+    )
+    db.add(bin_)
+    db.commit()
+    return bin_

@@ -72,3 +72,13 @@ class TransferRequest(BaseModel):
         if self.from_bin_id == self.to_bin_id:
             raise ValueError("from_bin_id and to_bin_id must be different bins")
         return self
+
+
+class DecisionRequest(BaseModel):
+    """A manager's note when approving (optional) or rejecting (required) a request."""
+
+    note: OptionalReason | None = None
+
+
+class RejectRequest(BaseModel):
+    note: Reason  # the requester must learn why

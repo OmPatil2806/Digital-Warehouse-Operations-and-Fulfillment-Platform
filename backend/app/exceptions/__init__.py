@@ -24,6 +24,13 @@ class NotFoundError(AppError):
     message = "Resource not found"
 
 
+class PermissionDeniedError(AppError):
+    """The user is logged in but not allowed to do this (e.g. approve their own request)."""
+
+    status_code = HTTPStatus.FORBIDDEN
+    message = "You do not have permission to perform this action"
+
+
 class ConflictError(AppError):
     """The request conflicts with existing data or a business rule."""
 

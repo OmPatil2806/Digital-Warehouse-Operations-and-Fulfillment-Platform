@@ -128,8 +128,8 @@ class InventoryService:
     # ---------------------------------------------------------------- receive
     def receive(self, data: ReceiveRequest, *, user: User | None) -> StockOperationResult:
         """Put received goods into a bin (on_hand +). Checks the bin's capacity."""
-        product = self._product(data.product_id)
-        bin_ = self._bin(data.bin_id)
+        product = self.get_product(data.product_id)
+        bin_ = self.get_bin(data.bin_id)
         self._check_fits(product, bin_, data.quantity)
 
         row = self.repo.get_or_create_row(product.id, bin_.id)
@@ -150,7 +150,7 @@ class InventoryService:
             changes=_diff(before, row),
             actor=user,
         )
-        self._commit()
+        self.commit()
         logger.info("Received %s x %s into %s", data.quantity, product.sku, bin_.location_code)
         return StockOperationResult(inventory=row, movements=[movement])
 
@@ -161,8 +161,8 @@ class InventoryService:
         Who may adjust without approval is decided by the API (manager approval comes in
         a later step); the service only guarantees the stock rules.
         """
-        product = self._product(data.product_id, allow_archived=True)
-        bin_ = self._bin(data.bin_id, allow_archived=True)
+        product = self.get_product(data.product_id, allow_archived=True)
+        bin_ = self.get_bin(data.bin_id, allow_archived=True)
         now = datetime.now(UTC)
         adjustment = self.repo.add(
             StockAdjustment(
@@ -183,7 +183,7 @@ class InventoryService:
         except Exception:
             self.db.rollback()  # nothing of a refused adjustment is kept
             raise
-        self._commit()
+        self.commit()
         return result
 
     def apply_adjustment(
@@ -240,9 +240,9 @@ class InventoryService:
         A given bin must have enough available units itself; without a bin, units are
         taken from the best bins first (see `rows_with_available_stock`).
         """
-        product = self._product(data.product_id)
+        product = self.get_product(data.product_id)
         if data.bin_id is not None:
-            bin_ = self._bin(data.bin_id)
+            bin_ = self.get_bin(data.bin_id)
             row = self.repo.get_row(product.id, bin_.id)
             available = row.quantity_available if row else 0
             if available < data.quantity:
@@ -299,7 +299,7 @@ class InventoryService:
         except Exception:
             self.db.rollback()
             raise
-        self._commit()
+        self.commit()
         return result
 
     def release(
@@ -319,7 +319,7 @@ class InventoryService:
         except Exception:
             self.db.rollback()
             raise
-        self._commit()
+        self.commit()
         return reservation
 
     def release_for_reference(
@@ -335,7 +335,7 @@ class InventoryService:
         except Exception:
             self.db.rollback()
             raise
-        self._commit()
+        self.commit()
         return reservations
 
     def _close_reservation(
@@ -395,9 +395,9 @@ class InventoryService:
     # --------------------------------------------------------------- transfers
     def transfer(self, data: TransferRequest, *, user: User | None) -> TransferResult:
         """Move available units to another bin immediately (stored as a completed transfer)."""
-        product = self._product(data.product_id, allow_archived=True)
-        from_bin = self._bin(data.from_bin_id, allow_archived=True)
-        to_bin = self._bin(data.to_bin_id)
+        product = self.get_product(data.product_id, allow_archived=True)
+        from_bin = self.get_bin(data.from_bin_id, allow_archived=True)
+        to_bin = self.get_bin(data.to_bin_id)
         now = datetime.now(UTC)
         transfer = self.repo.add(
             StockTransfer(
@@ -418,7 +418,7 @@ class InventoryService:
         except Exception:
             self.db.rollback()
             raise
-        self._commit()
+        self.commit()
         return result
 
     def apply_transfer(self, transfer: StockTransfer, *, user: User | None) -> TransferResult:
@@ -427,9 +427,9 @@ class InventoryService:
         Only available units move: reserved and damaged units stay where they are.
         The total quantity of the product is the same before and after.
         """
-        product = self._product(transfer.product_id, allow_archived=True)
-        from_bin = self._bin(transfer.from_bin_id, allow_archived=True)
-        to_bin = self._bin(transfer.to_bin_id)  # never into an archived bin
+        product = self.get_product(transfer.product_id, allow_archived=True)
+        from_bin = self.get_bin(transfer.from_bin_id, allow_archived=True)
+        to_bin = self.get_bin(transfer.to_bin_id)  # never into an archived bin
         quantity = transfer.quantity
 
         source = self.repo.get_row(product.id, from_bin.id)
@@ -524,7 +524,7 @@ class InventoryService:
         )
 
     # ------------------------------------------------------------------ checks
-    def _product(self, product_id: int, *, allow_archived: bool = False) -> Product:
+    def get_product(self, product_id: int, *, allow_archived: bool = False) -> Product:
         product = self.db.get(Product, product_id)
         if product is None:
             raise UnprocessableError("Product not found")
@@ -532,7 +532,7 @@ class InventoryService:
             raise UnprocessableError(f"Product {product.sku} is archived")
         return product
 
-    def _bin(self, bin_id: int, *, allow_archived: bool = False) -> Bin:
+    def get_bin(self, bin_id: int, *, allow_archived: bool = False) -> Bin:
         bin_ = self.db.get(Bin, bin_id)
         if bin_ is None:
             raise UnprocessableError("Bin not found")
@@ -573,7 +573,7 @@ class InventoryService:
         volume = sum((r.product.volume_cm3 * r.quantity_on_hand for r in rows), Decimal("0"))
         return weight, volume
 
-    def _commit(self) -> None:
+    def commit(self) -> None:
         try:
             self.db.commit()
         except StaleDataError as exc:  # another request updated the same row first

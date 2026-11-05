@@ -198,7 +198,7 @@ def update_bin(bin_id: int, data: BinUpdate, db: DbSession, _: LayoutEditor) -> 
 @router.get(
     "/bins/{bin_id}/fit",
     response_model=FitResult,
-    summary="Check whether a quantity of a product fits into an (empty) bin",
+    summary="Check whether a quantity of a product fits into a bin (on top of its contents)",
 )
 def check_fit(
     bin_id: int,
@@ -210,6 +210,7 @@ def check_fit(
     service = WarehouseService(db)
     result = service.check_fit(bin_id, product_id, quantity)
     bin_ = service.get_bin(bin_id)
+    used_weight, used_volume = service.bin_load(bin_id)
     return FitResult(
         fits=result.fits,
         reasons=result.reasons,
@@ -217,4 +218,6 @@ def check_fit(
         required_volume_cm3=result.required_volume_cm3,
         max_weight_kg=bin_.max_weight_kg,
         max_volume_cm3=bin_.max_volume_cm3,
+        used_weight_kg=used_weight,
+        used_volume_cm3=used_volume,
     )

@@ -330,6 +330,22 @@ def test_bin_capacity_update_and_fit_check(
     assert too_heavy.json()["fits"] is False
     assert too_heavy.json()["reasons"][0].startswith("Too heavy")
 
+    # What is already in the bin counts: after receiving 3 units only 2 more fit.
+    client.post(
+        f"{API}/inventory/receive",
+        json={"product_id": product.id, "bin_id": bin_id, "quantity": 3},
+        headers=manager,
+    )
+    now = client.get(f"{API}/bins/{bin_id}/fit?product_id={product.id}&quantity=3", headers=manager)
+    assert now.json()["fits"] is False
+    assert now.json()["used_weight_kg"] == "6.000"
+    assert (
+        client.get(
+            f"{API}/bins/{bin_id}/fit?product_id={product.id}&quantity=2", headers=manager
+        ).json()["fits"]
+        is True
+    )
+
 
 # --------------------------------------------------------------------- permissions
 

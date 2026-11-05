@@ -18,6 +18,7 @@ const SupplierDetailPage = lazy(() => import('../pages/SupplierDetailPage'))
 const WarehouseLayoutPage = lazy(() => import('../pages/WarehouseLayoutPage'))
 const UsersPage = lazy(() => import('../pages/UsersPage'))
 const InventoryPage = lazy(() => import('../pages/InventoryPage'))
+const CycleCountPage = lazy(() => import('../pages/CycleCountPage'))
 
 /**
  * All page routes of the application.
@@ -44,6 +45,7 @@ export function AppRoutes() {
             <Route path="/suppliers/:supplierId" element={<SupplierDetailPage />} />
             <Route path="/warehouse" element={<WarehouseLayoutPage />} />
             <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/inventory/cycle-counts/:countId" element={<CycleCountPage />} />
           </Route>
 
           {/* Administrators only */}

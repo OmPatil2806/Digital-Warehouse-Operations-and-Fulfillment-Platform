@@ -1,5 +1,6 @@
 import type {
   BinDetail,
+  FitResult,
   GenerateLayoutInput,
   GenerateLayoutResult,
   Rack,
@@ -69,5 +70,16 @@ export async function getBinByCode(locationCode: string): Promise<BinDetail> {
   const { data } = await apiClient.get<BinDetail>(
     `/bins/by-code/${encodeURIComponent(locationCode.trim())}`,
   )
+  return data
+}
+
+export async function checkFit(
+  binId: number,
+  productId: number,
+  quantity: number,
+): Promise<FitResult> {
+  const { data } = await apiClient.get<FitResult>(`/bins/${binId}/fit`, {
+    params: { product_id: productId, quantity },
+  })
   return data
 }

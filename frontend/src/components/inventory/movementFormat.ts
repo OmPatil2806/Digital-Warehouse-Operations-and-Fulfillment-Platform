@@ -1,5 +1,5 @@
 import type { BadgeTone } from '../common/Badge'
-import type { Movement, MovementType, ReferenceType } from '../../types/inventory'
+import type { CycleCountStatus, Movement, MovementType, ReferenceType } from '../../types/inventory'
 
 export const MOVEMENT_LABELS: Record<MovementType, string> = {
   receipt: 'Received',
@@ -69,4 +69,11 @@ export function describeReference(m: Movement): string | null {
 
 export function formatDateTime(value: string): string {
   return new Date(value).toLocaleString('en-IE', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+export const COUNT_STATUS_TONES: Record<CycleCountStatus, BadgeTone> = {
+  open: 'info',
+  submitted: 'warning',
+  completed: 'success',
+  cancelled: 'neutral',
 }

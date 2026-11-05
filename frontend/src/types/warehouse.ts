@@ -97,3 +97,15 @@ export interface GenerateLayoutResult {
   first_location_code: string
   last_location_code: string
 }
+
+/** GET /bins/{id}/fit: would `quantity` more units fit on top of the bin's contents? */
+export interface FitResult {
+  fits: boolean
+  reasons: string[]
+  required_weight_kg: string
+  required_volume_cm3: string
+  max_weight_kg: string
+  max_volume_cm3: number
+  used_weight_kg: string
+  used_volume_cm3: string
+}

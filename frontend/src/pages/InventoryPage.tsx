@@ -1,21 +1,39 @@
-import { X } from 'lucide-react'
-import { useId } from 'react'
+import { ArrowLeftRight, PackagePlus, SlidersHorizontal, X } from 'lucide-react'
+import { useId, useState } from 'react'
 
 import { getProductStock, inventoryKeys, listInventory } from '../api/inventoryApi'
 import { listWarehouses, warehouseKeys } from '../api/warehouseApi'
+import { Button } from '../components/common/Button'
 import { DataTable, type Column } from '../components/common/DataTable'
 import { Modal } from '../components/common/Modal'
 import { FilterSelect, PageHeader } from '../components/common/PageHeader'
 import { SearchInput } from '../components/common/SearchInput'
+import { CycleCountsPanel } from '../components/inventory/CycleCountsPanel'
 import { MovementHistory } from '../components/inventory/MovementHistory'
 import { MOVEMENT_LABELS } from '../components/inventory/movementFormat'
+import { isApprover } from '../components/inventory/operations'
 import { ProductStockPanel } from '../components/inventory/ProductStockPanel'
+import { RequestsPanel } from '../components/inventory/RequestsPanel'
+import {
+  AdjustDialog,
+  ReceiveDialog,
+  TransferDialog,
+} from '../components/inventory/StockOperationDialogs'
 import { useApiQuery } from '../hooks/useApiQuery'
+import { useAuth } from '../hooks/useAuth'
 import { useUrlState } from '../hooks/useUrlState'
-import { MOVEMENT_TYPES, type InventoryRow, type MovementType } from '../types/inventory'
+import {
+  MOVEMENT_TYPES,
+  type InventoryRow,
+  type MovementType,
+  type ProductRef,
+} from '../types/inventory'
 
 const PAGE_SIZE = 25
-// view: "stock" (per product and bin) or "movements" (history).
+type Operation = { kind: 'receive' | 'transfer' | 'adjust'; product: ProductRef | null }
+
+// view: "stock" (per product and bin), "movements" (history), "requests" (approvals)
+// or "counts" (cycle counts).
 // product: in the stock view opens "where is this product?"; in the history it filters.
 const URL_DEFAULTS = { view: 'stock', q: '', warehouse: '', product: '', type: '', offset: '0' }
 
@@ -60,6 +78,8 @@ const STOCK_COLUMNS: Column<InventoryRow>[] = [
 export default function InventoryPage() {
   const [filters, setFilters] = useUrlState(URL_DEFAULTS)
   const tabsId = useId()
+  const { user } = useAuth()
+  const [operation, setOperation] = useState<Operation | null>(null)
   const productId = filters.product ? Number(filters.product) : undefined
   const offset = Number(filters.offset)
 
@@ -87,13 +107,43 @@ export default function InventoryPage() {
   const tabs = [
     { view: 'stock', label: 'Stock' },
     { view: 'movements', label: 'Movement history' },
+    { view: 'requests', label: isApprover(user) ? 'Approvals' : 'My requests' },
+    { view: 'counts', label: 'Cycle counts' },
   ]
+  const startOperation = (kind: Operation['kind'], product: ProductRef | null = null) => {
+    setFilters({ product: '', offset: filters.offset }) // close the stock dialog first
+    setOperation({ kind, product })
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title="Inventory"
         description="Stock per product and bin. Available = on hand − reserved − damaged."
+        actions={
+          <>
+            <Button
+              icon={<PackagePlus size={16} aria-hidden="true" />}
+              onClick={() => startOperation('receive')}
+            >
+              Receive
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<ArrowLeftRight size={16} aria-hidden="true" />}
+              onClick={() => startOperation('transfer')}
+            >
+              Move
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<SlidersHorizontal size={16} aria-hidden="true" />}
+              onClick={() => startOperation('adjust')}
+            >
+              Adjust
+            </Button>
+          </>
+        }
       />
 
       <div
@@ -125,7 +175,14 @@ export default function InventoryPage() {
       </div>
 
       <div role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-${filters.view}`}>
-        {filters.view === 'movements' ? (
+        {filters.view === 'requests' ? (
+          <RequestsPanel />
+        ) : filters.view === 'counts' ? (
+          <CycleCountsPanel
+            offset={offset}
+            onOffsetChange={(next) => setFilters({ offset: String(next) })}
+          />
+        ) : filters.view === 'movements' ? (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
               <FilterSelect
@@ -214,9 +271,46 @@ export default function InventoryPage() {
         title={productLabel}
         description="Where this product is stored"
         size="lg"
+        footer={
+          product.data && (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => startOperation('adjust', product.data.product)}
+              >
+                Adjust
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => startOperation('transfer', product.data.product)}
+              >
+                Move
+              </Button>
+              <Button onClick={() => startOperation('receive', product.data.product)}>
+                Receive
+              </Button>
+            </>
+          )
+        }
       >
         {productId !== undefined && <ProductStockPanel productId={productId} />}
       </Modal>
+
+      <ReceiveDialog
+        open={operation?.kind === 'receive'}
+        initialProduct={operation?.product}
+        onClose={() => setOperation(null)}
+      />
+      <TransferDialog
+        open={operation?.kind === 'transfer'}
+        initialProduct={operation?.product}
+        onClose={() => setOperation(null)}
+      />
+      <AdjustDialog
+        open={operation?.kind === 'adjust'}
+        initialProduct={operation?.product}
+        onClose={() => setOperation(null)}
+      />
     </div>
   )
 }

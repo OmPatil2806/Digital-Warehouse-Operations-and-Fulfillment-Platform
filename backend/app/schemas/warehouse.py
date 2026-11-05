@@ -250,3 +250,6 @@ class FitResult(BaseModel):
     required_volume_cm3: Decimal
     max_weight_kg: Decimal
     max_volume_cm3: int
+    # What is already stored in the bin (counted in the check)
+    used_weight_kg: Decimal = Decimal("0")
+    used_volume_cm3: Decimal = Decimal("0")

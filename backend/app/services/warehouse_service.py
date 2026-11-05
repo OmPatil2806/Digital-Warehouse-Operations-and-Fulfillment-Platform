@@ -9,6 +9,7 @@
 
 import re
 from collections.abc import Sequence
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
@@ -310,12 +311,27 @@ class WarehouseService:
             alerts.evaluate(product_ids=product_ids)
 
     # ----------------------------------------------------------------- capacity
+    def bin_load(self, bin_id: int) -> tuple[Decimal, Decimal]:
+        """Weight (kg) and volume (cm³) of everything stored in a bin."""
+        rows = self.db.scalars(
+            select(Inventory)
+            .options(joinedload(Inventory.product))
+            .where(Inventory.bin_id == bin_id, Inventory.quantity_on_hand > 0)
+        ).all()
+        weight = sum((r.product.weight_kg * r.quantity_on_hand for r in rows), Decimal("0"))
+        volume = sum((r.product.volume_cm3 * r.quantity_on_hand for r in rows), Decimal("0"))
+        return weight, volume
+
     def check_fit(self, bin_id: int, product_id: int, quantity: int) -> FitCheck:
+        """Would `quantity` more units fit, on top of what the bin already holds?"""
         bin_ = self.get_bin(bin_id)
         product = self.db.get(Product, product_id)
         if product is None:
             raise NotFoundError("Product not found")
-        return product_fits_bin(product, bin_, quantity)
+        weight, volume = self.bin_load(bin_id)
+        return product_fits_bin(
+            product, bin_, quantity, current_weight_kg=weight, current_volume_cm3=volume
+        )
 
     # ------------------------------------------------------------------ helpers
     def _active_parent(self, parent: Node, label: str) -> Any:

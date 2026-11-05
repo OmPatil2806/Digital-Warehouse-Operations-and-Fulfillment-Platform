@@ -23,7 +23,8 @@ INVENTORY_TABLES = {
     "cycle_counts",
     "cycle_count_lines",
 }
-ALL_TABLES = AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES
+AUDIT_TABLES = {"audit_logs", "alerts"}
+ALL_TABLES = AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES | AUDIT_TABLES
 
 
 def _url(tmp_path: Path) -> str:
@@ -42,7 +43,12 @@ def test_upgrade_and_downgrade_round_trip(tmp_path: Path) -> None:
         triggers = connection.exec_driver_sql(
             "SELECT name FROM sqlite_master WHERE type = 'trigger'"
         ).scalars()
-        assert set(triggers) >= {"inventory_movements_no_update", "inventory_movements_no_delete"}
+        assert set(triggers) >= {
+            "inventory_movements_no_update",
+            "inventory_movements_no_delete",
+            "audit_logs_no_update",
+            "audit_logs_no_delete",
+        }
 
     command.downgrade(config, "base")
     assert set(inspect(engine).get_table_names()) <= {"alembic_version"}

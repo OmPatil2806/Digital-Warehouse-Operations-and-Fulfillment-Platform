@@ -4,6 +4,7 @@ Every model module must be imported here so that `Base.metadata` knows all table
 (Alembic autogenerate and the test database rely on this).
 """
 
+from app.models.audit import Alert, AlertSeverity, AlertStatus, AlertType, AuditAction, AuditLog
 from app.models.catalog import Category, Product, Supplier, SupplierProduct
 from app.models.inventory import (
     AdjustmentKind,
@@ -26,6 +27,12 @@ from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone, ZoneType, bu
 __all__ = [
     "ROLE_DESCRIPTIONS",
     "AdjustmentKind",
+    "Alert",
+    "AlertSeverity",
+    "AlertStatus",
+    "AlertType",
+    "AuditAction",
+    "AuditLog",
     "Bin",
     "Category",
     "CycleCount",
@@ -55,3 +62,8 @@ __all__ = [
     "build_location_code",
     "user_roles",
 ]
+
+# Record changes of users, catalog and layout in the audit log (see audit_tracking.py).
+from app.services.audit_tracking import install_audit_tracking  # noqa: E402
+
+install_audit_tracking()

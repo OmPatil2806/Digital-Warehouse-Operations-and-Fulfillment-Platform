@@ -10,6 +10,7 @@ from app.core.security import TokenError, decode_access_token
 from app.database.session import get_db
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.services.audit_tracking import set_audit_actor
 
 # auto_error=False: we raise our own 401 (FastAPI's default would be 403).
 bearer_scheme = HTTPBearer(auto_error=False, description="Access token from POST /auth/login")
@@ -42,6 +43,8 @@ def get_current_user(
     if user is None or not user.is_active:
         # A deleted or deactivated user's access token stops working immediately.
         raise unauthorized("User not found or inactive")
+    # Every change this request makes is recorded in the audit log under this user.
+    set_audit_actor(db, user)
     return user
 
 

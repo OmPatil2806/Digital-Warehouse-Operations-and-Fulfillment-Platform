@@ -27,14 +27,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.base import Base
 from app.database.types import UTCDateTime
 from app.models.catalog import Product
-from app.models.mixins import IdMixin, TimestampMixin
+from app.models.mixins import IdMixin, TimestampMixin, one_of
 from app.models.user import User
 from app.models.warehouse import Bin
-
-
-def _one_of(column: str, values: type[StrEnum]) -> str:
-    """SQL for `column IN ('a', 'b', ...)` built from an enum, so both stay in sync."""
-    return f"{column} IN ({', '.join(repr(v.value) for v in values)})"
 
 
 # --------------------------------------------------------------------------- enums
@@ -152,7 +147,7 @@ class InventoryMovement(IdMixin, Base):
 
     __tablename__ = "inventory_movements"
     __table_args__ = (
-        CheckConstraint(_one_of("movement_type", MovementType), name="valid_movement_type"),
+        CheckConstraint(one_of("movement_type", MovementType), name="valid_movement_type"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint(
             "on_hand_delta != 0 OR reserved_delta != 0 OR damaged_delta != 0",
@@ -164,7 +159,7 @@ class InventoryMovement(IdMixin, Base):
             name="balances_valid",
         ),
         CheckConstraint(
-            f"reference_type IS NULL OR {_one_of('reference_type', ReferenceType)}",
+            f"reference_type IS NULL OR {one_of('reference_type', ReferenceType)}",
             name="valid_reference_type",
         ),
         CheckConstraint(
@@ -222,7 +217,7 @@ class StockTransfer(IdMixin, TimestampMixin, _DecisionMixin, Base):
 
     __tablename__ = "stock_transfers"
     __table_args__ = (
-        CheckConstraint(_one_of("status", DocumentStatus), name="valid_status"),
+        CheckConstraint(one_of("status", DocumentStatus), name="valid_status"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint("from_bin_id != to_bin_id", name="different_bins"),
     )
@@ -257,8 +252,8 @@ class StockAdjustment(IdMixin, TimestampMixin, _DecisionMixin, Base):
 
     __tablename__ = "stock_adjustments"
     __table_args__ = (
-        CheckConstraint(_one_of("status", DocumentStatus), name="valid_status"),
-        CheckConstraint(_one_of("kind", AdjustmentKind), name="valid_kind"),
+        CheckConstraint(one_of("status", DocumentStatus), name="valid_status"),
+        CheckConstraint(one_of("kind", AdjustmentKind), name="valid_kind"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
     )
 
@@ -289,10 +284,10 @@ class StockReservation(IdMixin, TimestampMixin, Base):
 
     __tablename__ = "stock_reservations"
     __table_args__ = (
-        CheckConstraint(_one_of("status", ReservationStatus), name="valid_status"),
+        CheckConstraint(one_of("status", ReservationStatus), name="valid_status"),
         CheckConstraint("quantity > 0", name="quantity_positive"),
         CheckConstraint(
-            f"reference_type IS NULL OR {_one_of('reference_type', ReferenceType)}",
+            f"reference_type IS NULL OR {one_of('reference_type', ReferenceType)}",
             name="valid_reference_type",
         ),
         CheckConstraint(
@@ -330,7 +325,7 @@ class CycleCount(IdMixin, TimestampMixin, _DecisionMixin, Base):
     """A physical count of one bin, compared with what the system expects."""
 
     __tablename__ = "cycle_counts"
-    __table_args__ = (CheckConstraint(_one_of("status", CycleCountStatus), name="valid_status"),)
+    __table_args__ = (CheckConstraint(one_of("status", CycleCountStatus), name="valid_status"),)
 
     bin_id: Mapped[int] = mapped_column(
         ForeignKey("bins.id", ondelete="RESTRICT"), index=True, nullable=False

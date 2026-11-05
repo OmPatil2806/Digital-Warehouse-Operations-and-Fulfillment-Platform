@@ -17,6 +17,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
+from app.models.user import User
 from app.repositories.audit_repository import AuditRepository
 from app.services.audit_tracking import get_audit_actor, to_json_value
 
@@ -34,9 +35,16 @@ class AuditService:
         *,
         summary: str | None = None,
         changes: dict[str, Any] | None = None,
+        actor: User | None = None,
     ) -> AuditLog:
-        """Add an audit row for a business operation (the caller commits)."""
-        actor_id, actor_email = get_audit_actor(self.db)
+        """Add an audit row for a business operation (the caller commits).
+
+        The actor defaults to the user of the current request; pass `actor` to set it.
+        """
+        if actor is not None:
+            actor_id, actor_email = actor.id, actor.email
+        else:
+            actor_id, actor_email = get_audit_actor(self.db)
         return self.entries.add(
             AuditLog(
                 actor_id=actor_id,

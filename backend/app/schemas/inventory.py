@@ -2,9 +2,9 @@
 
 from typing import Annotated
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-from app.models.inventory import AdjustmentKind
+from app.models.inventory import AdjustmentKind, ReferenceType
 
 # One operation moves at most a million units (protects against typos like 1000000000).
 MAX_QUANTITY = 1_000_000
@@ -31,3 +31,44 @@ class AdjustmentRequest(BaseModel):
     kind: AdjustmentKind
     quantity: Quantity
     reason: Reason  # always required: every correction must be explainable
+
+
+class ReserveRequest(BaseModel):
+    """Hold available units of a product, e.g. for an order.
+
+    With `bin_id`, units are held in that bin. Without it, the system picks the bins:
+    picking zones first, then the racks closest to packing (shortest walk for pickers).
+    """
+
+    product_id: int
+    quantity: Quantity
+    bin_id: int | None = None
+    reference_type: ReferenceType | None = None  # what the units are held for
+    reference_id: int | None = None
+    reason: OptionalReason | None = None
+
+    @model_validator(mode="after")
+    def _reference_complete(self) -> "ReserveRequest":
+        if (self.reference_type is None) != (self.reference_id is None):
+            raise ValueError("reference_type and reference_id must be given together")
+        return self
+
+
+class ReleaseRequest(BaseModel):
+    reason: OptionalReason | None = None
+
+
+class TransferRequest(BaseModel):
+    """Move available units of a product from one bin to another."""
+
+    product_id: int
+    from_bin_id: int
+    to_bin_id: int
+    quantity: Quantity
+    reason: OptionalReason | None = None
+
+    @model_validator(mode="after")
+    def _different_bins(self) -> "TransferRequest":
+        if self.from_bin_id == self.to_bin_id:
+            raise ValueError("from_bin_id and to_bin_id must be different bins")
+        return self

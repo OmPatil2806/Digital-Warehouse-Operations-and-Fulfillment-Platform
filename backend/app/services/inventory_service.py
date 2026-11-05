@@ -15,8 +15,9 @@ damaged would exceed on_hand (the database enforces the same rule as a last line
 defence). If another request changed the same row in the meantime, the optimistic lock
 (`Inventory.version`) makes the commit fail and the caller gets a 409 "please retry".
 
-This module covers receiving and adjustments (found, lost, damaged, restored, written
-off). Reservations, transfers, approvals and cycle counts build on `_change` as well.
+Operations: receiving, adjustments (found, lost, damaged, restored, written off),
+reservations (reserve / release) and transfers between bins. Approvals and cycle counts
+build on the same primitives.
 """
 
 from collections.abc import Sequence
@@ -29,7 +30,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.core.logging import get_logger
-from app.exceptions import ConflictError, UnprocessableError
+from app.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.catalog import Product
 from app.models.inventory import (
     AdjustmentKind,
@@ -38,12 +39,21 @@ from app.models.inventory import (
     InventoryMovement,
     MovementType,
     ReferenceType,
+    ReservationStatus,
     StockAdjustment,
+    StockReservation,
+    StockTransfer,
 )
 from app.models.user import User
 from app.models.warehouse import Bin
 from app.repositories.inventory_repository import InventoryRepository
-from app.schemas.inventory import AdjustmentRequest, ReceiveRequest
+from app.schemas.inventory import (
+    AdjustmentRequest,
+    ReceiveRequest,
+    ReleaseRequest,
+    ReserveRequest,
+    TransferRequest,
+)
 from app.services.audit_service import AuditService
 from app.services.capacity import product_fits_bin
 
@@ -73,6 +83,30 @@ class StockOperationResult:
     inventory: Inventory
     movements: list[InventoryMovement] = field(default_factory=list)
     adjustment: StockAdjustment | None = None
+
+
+@dataclass
+class ReservationResult:
+    """One reservation per bin the units were taken from."""
+
+    reservations: list[StockReservation]
+    movements: list[InventoryMovement]
+
+    @property
+    def quantity(self) -> int:
+        return sum(r.quantity for r in self.reservations)
+
+
+@dataclass
+class TransferResult:
+    transfer: StockTransfer
+    source: Inventory
+    target: Inventory
+    movements: list[InventoryMovement]
+
+
+class ReservationNotFoundError(NotFoundError):
+    message = "Reservation not found"
 
 
 # How each adjustment kind changes (on_hand, damaged), per unit, and its movement type.
@@ -199,6 +233,253 @@ class InventoryService:
         logger.info("Adjustment %s applied: %s", adjustment.id, movement)
         return StockOperationResult(inventory=row, movements=[movement], adjustment=adjustment)
 
+    # ------------------------------------------------------------ reservations
+    def reserve(self, data: ReserveRequest, *, user: User | None) -> ReservationResult:
+        """Hold `quantity` available units, all or nothing.
+
+        A given bin must have enough available units itself; without a bin, units are
+        taken from the best bins first (see `rows_with_available_stock`).
+        """
+        product = self._product(data.product_id)
+        if data.bin_id is not None:
+            bin_ = self._bin(data.bin_id)
+            row = self.repo.get_row(product.id, bin_.id)
+            available = row.quantity_available if row else 0
+            if available < data.quantity:
+                raise InsufficientStockError(
+                    f"Only {available} units of {product.sku} available in {bin_.location_code}"
+                )
+            plan = [(row, data.quantity)]
+        else:
+            plan = self._allocate(product, data.quantity)
+
+        reference = (
+            (data.reference_type, data.reference_id) if data.reference_type is not None else None
+        )
+        result = ReservationResult(reservations=[], movements=[])
+        try:
+            for row, quantity in plan:
+                reservation = self.repo.add(
+                    StockReservation(
+                        product_id=product.id,
+                        bin_id=row.bin_id,
+                        quantity=quantity,
+                        status=ReservationStatus.ACTIVE,
+                        reference_type=reference[0] if reference else None,
+                        reference_id=reference[1] if reference else None,
+                        reason=data.reason,
+                        created_by_id=user.id if user else None,
+                    )
+                )
+                self.db.flush()
+                before = _quantities(row)
+                result.movements.append(
+                    self._change(
+                        row,
+                        MovementType.RESERVATION,
+                        quantity,
+                        reserved=quantity,
+                        reference=(ReferenceType.RESERVATION, reservation.id),
+                        reason=data.reason,
+                        user=user,
+                    )
+                )
+                self.audit.record(
+                    "inventory.reserve",
+                    AUDIT_ENTITY,
+                    row.id,
+                    summary=(
+                        f"Reserved {quantity} x {product.sku} in {row.bin.location_code}"
+                        + _for_reference(reference)
+                    ),
+                    changes=_diff(before, row),
+                    actor=user,
+                )
+                result.reservations.append(reservation)
+        except Exception:
+            self.db.rollback()
+            raise
+        self._commit()
+        return result
+
+    def release(
+        self, reservation_id: int, data: ReleaseRequest | None = None, *, user: User | None
+    ) -> StockReservation:
+        """Cancel an active reservation: its units become available again."""
+        reservation = self.repo.get_reservation(reservation_id)
+        if reservation is None:
+            raise ReservationNotFoundError()
+        try:
+            self._close_reservation(
+                reservation,
+                ReservationStatus.RELEASED,
+                reason=data.reason if data else None,
+                user=user,
+            )
+        except Exception:
+            self.db.rollback()
+            raise
+        self._commit()
+        return reservation
+
+    def release_for_reference(
+        self, reference_type: ReferenceType, reference_id: int, *, user: User | None, reason: str
+    ) -> list[StockReservation]:
+        """Release everything held for e.g. an order (used when an order is cancelled)."""
+        reservations = list(self.repo.active_reservations_for(reference_type, reference_id))
+        try:
+            for reservation in reservations:
+                self._close_reservation(
+                    reservation, ReservationStatus.RELEASED, reason=reason, user=user
+                )
+        except Exception:
+            self.db.rollback()
+            raise
+        self._commit()
+        return reservations
+
+    def _close_reservation(
+        self,
+        reservation: StockReservation,
+        status: ReservationStatus,
+        *,
+        reason: str | None,
+        user: User | None,
+    ) -> InventoryMovement:
+        if reservation.status != ReservationStatus.ACTIVE:
+            raise ConflictError(f"Reservation {reservation.id} is already {reservation.status}")
+        row = self.repo.get_row(reservation.product_id, reservation.bin_id)
+        if row is None:  # cannot happen while the database rules hold
+            raise ConflictError(f"Reservation {reservation.id} has no stock row")
+        before = _quantities(row)
+        movement = self._change(
+            row,
+            MovementType.RELEASE,
+            reservation.quantity,
+            reserved=-reservation.quantity,
+            reference=(ReferenceType.RESERVATION, reservation.id),
+            reason=reason,
+            user=user,
+        )
+        reservation.status = status
+        reservation.closed_at = datetime.now(UTC)
+        self.audit.record(
+            "inventory.release",
+            AUDIT_ENTITY,
+            row.id,
+            summary=(
+                f"Released reservation {reservation.id}: {reservation.quantity} x "
+                f"{row.product.sku} in {row.bin.location_code}"
+            ),
+            changes=_diff(before, row),
+            actor=user,
+        )
+        return movement
+
+    def _allocate(self, product: Product, quantity: int) -> list[tuple[Inventory, int]]:
+        """Split `quantity` over the best bins; refuse if there is not enough in total."""
+        rows = self.repo.rows_with_available_stock(product.id)
+        total = sum(row.quantity_available for row in rows)
+        if total < quantity:
+            raise InsufficientStockError(f"Only {total} units of {product.sku} available")
+        plan: list[tuple[Inventory, int]] = []
+        remaining = quantity
+        for row in rows:
+            take = min(row.quantity_available, remaining)
+            plan.append((row, take))
+            remaining -= take
+            if remaining == 0:
+                break
+        return plan
+
+    # --------------------------------------------------------------- transfers
+    def transfer(self, data: TransferRequest, *, user: User | None) -> TransferResult:
+        """Move available units to another bin immediately (stored as a completed transfer)."""
+        product = self._product(data.product_id, allow_archived=True)
+        from_bin = self._bin(data.from_bin_id, allow_archived=True)
+        to_bin = self._bin(data.to_bin_id)
+        now = datetime.now(UTC)
+        transfer = self.repo.add(
+            StockTransfer(
+                product_id=product.id,
+                from_bin_id=from_bin.id,
+                to_bin_id=to_bin.id,
+                quantity=data.quantity,
+                reason=data.reason,
+                status=DocumentStatus.COMPLETED,
+                requested_by_id=user.id if user else None,
+                decided_by_id=user.id if user else None,
+                decided_at=now,
+            )
+        )
+        try:
+            self.db.flush()
+            result = self.apply_transfer(transfer, user=user)
+        except Exception:
+            self.db.rollback()
+            raise
+        self._commit()
+        return result
+
+    def apply_transfer(self, transfer: StockTransfer, *, user: User | None) -> TransferResult:
+        """Move the units as `transfer` says (no commit; also used for approvals).
+
+        Only available units move: reserved and damaged units stay where they are.
+        The total quantity of the product is the same before and after.
+        """
+        product = self._product(transfer.product_id, allow_archived=True)
+        from_bin = self._bin(transfer.from_bin_id, allow_archived=True)
+        to_bin = self._bin(transfer.to_bin_id)  # never into an archived bin
+        quantity = transfer.quantity
+
+        source = self.repo.get_row(product.id, from_bin.id)
+        available = source.quantity_available if source else 0
+        if available < quantity:
+            raise InsufficientStockError(
+                f"Only {available} units of {product.sku} available in {from_bin.location_code}"
+            )
+        # Archived products may still be moved (e.g. to clear a bin); capacity still applies.
+        self._check_fits(product, to_bin, quantity, ignore_archived_product=True)
+        target = self.repo.get_or_create_row(product.id, to_bin.id)
+
+        reference = (ReferenceType.TRANSFER, transfer.id)
+        before_source, before_target = _quantities(source), _quantities(target)
+        movements = [
+            self._change(
+                source,
+                MovementType.TRANSFER_OUT,
+                quantity,
+                on_hand=-quantity,
+                reference=reference,
+                reason=transfer.reason,
+                user=user,
+            ),
+            self._change(
+                target,
+                MovementType.TRANSFER_IN,
+                quantity,
+                on_hand=quantity,
+                reference=reference,
+                reason=transfer.reason,
+                user=user,
+            ),
+        ]
+        self.audit.record(
+            "inventory.transfer",
+            "stock_transfer",
+            transfer.id,
+            summary=(
+                f"Moved {quantity} x {product.sku} from {from_bin.location_code} "
+                f"to {to_bin.location_code}"
+            ),
+            changes={
+                from_bin.location_code: _diff(before_source, source)["quantity_on_hand"],
+                to_bin.location_code: _diff(before_target, target)["quantity_on_hand"],
+            },
+            actor=user,
+        )
+        return TransferResult(transfer=transfer, source=source, target=target, movements=movements)
+
     # ------------------------------------------------------- the one way to change
     def _change(
         self,
@@ -267,15 +548,22 @@ class InventoryService:
         if not bin_.is_active:
             raise UnprocessableError(f"Bin {bin_.location_code} is archived")
 
-    def _check_fits(self, product: Product, bin_: Bin, quantity: int) -> None:
+    def _check_fits(
+        self, product: Product, bin_: Bin, quantity: int, *, ignore_archived_product: bool = False
+    ) -> None:
         weight, volume = self.bin_load(bin_.id)
         check = product_fits_bin(
             product, bin_, quantity, current_weight_kg=weight, current_volume_cm3=volume
         )
-        if not check.fits:
+        reasons = [
+            reason
+            for reason in check.reasons
+            if not (ignore_archived_product and reason == "Product is archived")
+        ]
+        if reasons:
             raise CapacityExceededError(
                 f"{quantity} x {product.sku} do not fit into {bin_.location_code}: "
-                + "; ".join(check.reasons)
+                + "; ".join(reasons)
             )
 
     def bin_load(self, bin_id: int) -> tuple[Decimal, Decimal]:
@@ -310,6 +598,10 @@ def _diff(before: dict[str, int], row: Inventory) -> dict[str, dict[str, int]]:
     return {
         key: {"old": before[key], "new": after[key]} for key in after if before[key] != after[key]
     }
+
+
+def _for_reference(reference: tuple[ReferenceType, int] | None) -> str:
+    return f" for {reference[0].value} {reference[1]}" if reference else ""
 
 
 def _check_quantities(row: Inventory, on_hand: int, reserved: int, damaged: int) -> None:

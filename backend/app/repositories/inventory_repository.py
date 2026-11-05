@@ -3,10 +3,11 @@
 from collections.abc import Sequence
 from typing import TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.inventory import Inventory
+from app.models.inventory import Inventory, ReservationStatus, StockReservation
+from app.models.warehouse import Bin, Rack, Shelf, Zone, ZoneType
 
 T = TypeVar("T")
 
@@ -45,4 +46,44 @@ class InventoryRepository:
             select(Inventory)
             .options(joinedload(Inventory.product))
             .where(Inventory.bin_id == bin_id, Inventory.quantity_on_hand > 0)
+        ).all()
+
+    def rows_with_available_stock(self, product_id: int) -> Sequence[Inventory]:
+        """Rows of a product with available units in active bins, best bins first.
+
+        Order: picking zones before other zones, then racks closest to packing, then
+        location code (stable). Used to choose bins automatically when reserving.
+        """
+        available = (
+            Inventory.quantity_on_hand - Inventory.quantity_reserved - Inventory.quantity_damaged
+        )
+        return self.db.scalars(
+            select(Inventory)
+            .join(Bin, Inventory.bin_id == Bin.id)
+            .join(Shelf, Bin.shelf_id == Shelf.id)
+            .join(Rack, Shelf.rack_id == Rack.id)
+            .join(Zone, Rack.zone_id == Zone.id)
+            .options(joinedload(Inventory.bin))
+            .where(Inventory.product_id == product_id, available > 0, Bin.is_active.is_(True))
+            .order_by(
+                case((Zone.zone_type == ZoneType.PICKING.value, 0), else_=1),
+                Rack.distance_to_packing_m,
+                Bin.location_code,
+            )
+        ).all()
+
+    def get_reservation(self, reservation_id: int) -> StockReservation | None:
+        return self.db.get(StockReservation, reservation_id)
+
+    def active_reservations_for(
+        self, reference_type: str, reference_id: int
+    ) -> Sequence[StockReservation]:
+        return self.db.scalars(
+            select(StockReservation)
+            .where(
+                StockReservation.reference_type == reference_type,
+                StockReservation.reference_id == reference_id,
+                StockReservation.status == ReservationStatus.ACTIVE.value,
+            )
+            .order_by(StockReservation.id)
         ).all()

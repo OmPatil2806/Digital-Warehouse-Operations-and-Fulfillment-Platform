@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.logging import get_logger
 from app.exceptions import ConflictError, NotFoundError, UnprocessableError
 from app.models.catalog import Product
+from app.models.inventory import Inventory
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone, build_location_code
 from app.schemas.warehouse import (
     BinCreate,
@@ -34,6 +35,7 @@ from app.schemas.warehouse import (
     ZoneCreate,
     ZoneUpdate,
 )
+from app.services.alert_service import AlertService
 from app.services.capacity import FitCheck, product_fits_bin
 
 logger = get_logger(__name__)
@@ -293,8 +295,19 @@ class WarehouseService:
             if parent is not None and not parent.is_active:
                 raise UnprocessableError("Restore the parent first")
             node.is_active = True
+        self._update_alerts(node, changes, is_active)
         _commit(self.db, "Update conflicts with existing data")
         return node
+
+    def _update_alerts(self, node: Node, changes: dict[str, Any], is_active: bool | None) -> None:
+        """New bin limits can make a bin over capacity; archiving or restoring part of the
+        layout changes which stock is available (low-stock alerts)."""
+        alerts = AlertService(self.db)
+        if isinstance(node, Bin) and {"max_weight_kg", "max_volume_cm3"} & changes.keys():
+            alerts.evaluate(bin_ids=[node.id])
+        if is_active is not None:
+            product_ids = self.db.scalars(select(Inventory.product_id).distinct()).all()
+            alerts.evaluate(product_ids=product_ids)
 
     # ----------------------------------------------------------------- capacity
     def check_fit(self, bin_id: int, product_id: int, quantity: int) -> FitCheck:

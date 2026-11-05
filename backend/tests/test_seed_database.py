@@ -12,10 +12,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import verify_password
+from app.models.audit import Alert
 from app.models.catalog import Category, Product, Supplier, SupplierProduct
+from app.models.inventory import Inventory, InventoryMovement, StockAdjustment
 from app.models.user import User
 from app.models.warehouse import Bin, Warehouse, Zone
 from app.services.capacity import product_fits_bin
+from app.services.inventory_service import InventoryService
 from tests.factories import create_user
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "seed_database.py"
@@ -54,6 +57,8 @@ def test_seed_creates_the_demo_dataset(script: ModuleType, db_session: Session) 
         "warehouses": 1,
         "zones": 4,
         "bins": 274,
+        "stocked products": 49,  # one product is deliberately out of stock
+        "pending requests": 1,
     }
     assert (count(db_session, Category), count(db_session, Product)) == (8, 50)
     assert count(db_session, Bin) == 274
@@ -210,3 +215,56 @@ def test_missing_tables_give_a_helpful_message(script: ModuleType, tmp_path: Pat
     with Session(engine) as empty_db, pytest.raises(script.SeedError, match="alembic upgrade"):
         script.seed(empty_db)
     engine.dispose()
+
+
+def test_seeded_stock_fits_its_bins_and_is_traceable(
+    script: ModuleType, db_session: Session
+) -> None:
+    script.seed(db_session)
+    inventory = InventoryService(db_session)
+
+    rows = list(db_session.scalars(select(Inventory)))
+    assert len({row.bin_id for row in rows}) == len(rows)  # one product per bin
+    for row in rows:
+        weight, volume = inventory.bin_load(row.bin_id)
+        assert weight <= row.bin.max_weight_kg and volume <= row.bin.max_volume_cm3
+    chilled = {
+        r.bin.location_code.split("-")[1]
+        for r in rows
+        if r.product.sku.startswith("FOO-") and r.product.sku in script.CHILLED_SKUS
+    }
+    assert chilled == {"ZC"}
+    # Every unit is explained by a receipt movement
+    received = db_session.scalar(select(func.sum(InventoryMovement.on_hand_delta)))
+    assert received == sum(row.quantity_on_hand for row in rows)
+
+
+def test_seed_raises_exactly_the_planned_low_stock_alerts(
+    script: ModuleType, db_session: Session
+) -> None:
+    script.seed(db_session)
+
+    alerts = {a.title.removeprefix("Low stock: "): a for a in db_session.scalars(select(Alert))}
+    assert set(alerts) == script.LOW_STOCK_SKUS | script.OUT_OF_STOCK_SKUS
+    assert {a.status for a in alerts.values()} == {"open"}  # none raised and resolved again
+    assert alerts["TOO-LAD1"].severity == "critical"
+    pending = db_session.scalars(select(StockAdjustment)).one()
+    assert (pending.status, pending.kind, pending.quantity) == ("pending", "damage", 2)
+
+
+def test_reset_removes_stock_but_keeps_movements_protected(
+    script: ModuleType, db_session: Session
+) -> None:
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    script.seed(db_session)
+
+    script.reset(db_session)
+
+    for model in (Inventory, InventoryMovement, StockAdjustment, Alert):
+        assert count(db_session, model) == 0
+    script.seed(db_session)  # and it can be loaded again
+    with pytest.raises(IntegrityError, match="immutable"):
+        db_session.execute(text("DELETE FROM inventory_movements"))
+    db_session.rollback()

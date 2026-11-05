@@ -1,4 +1,4 @@
-"""Load a small, realistic demo dataset (users, catalog, suppliers, warehouse layout).
+"""Load a small, realistic demo dataset (users, catalog, suppliers, layout and stock).
 
 Run from the project root, after `alembic upgrade head` (virtual environment active):
 
@@ -29,12 +29,23 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(BACKEND_DIR))
 
-from sqlalchemy import delete, func, inspect, select, update  # noqa: E402
+from sqlalchemy import delete, func, inspect, select, text, update  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.config import INSECURE_SECRET_ALLOWED_ENVS, get_settings  # noqa: E402
 from app.database.session import SessionLocal  # noqa: E402
+from app.models.audit import Alert  # noqa: E402
 from app.models.catalog import Category, Product, Supplier, SupplierProduct  # noqa: E402
+from app.models.inventory import (  # noqa: E402
+    AdjustmentKind,
+    CycleCount,
+    CycleCountLine,
+    Inventory,
+    InventoryMovement,
+    StockAdjustment,
+    StockReservation,
+    StockTransfer,
+)
 from app.models.user import RoleName, User  # noqa: E402
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone  # noqa: E402
 from app.schemas.catalog import (  # noqa: E402
@@ -43,14 +54,18 @@ from app.schemas.catalog import (  # noqa: E402
     SupplierCreate,
     SupplierProductCreate,
 )
+from app.schemas.inventory import AdjustmentRequest, ReceiveRequest  # noqa: E402
 from app.schemas.user import UserCreate  # noqa: E402
 from app.schemas.warehouse import GenerateLayoutRequest, WarehouseCreate, ZoneCreate  # noqa: E402
+from app.services.alert_service import AlertService  # noqa: E402
+from app.services.approval_service import ApprovalService  # noqa: E402
 from app.services.catalog_service import (  # noqa: E402
     CategoryService,
     ProductService,
     SupplierProductService,
     SupplierService,
 )
+from app.services.inventory_service import InventoryService  # noqa: E402
 from app.services.user_service import UserService  # noqa: E402
 from app.services.warehouse_service import WarehouseService  # noqa: E402
 
@@ -171,6 +186,12 @@ ZONES = [
     ("ZR", "Returns", "returns", 1, 2, 5, "100", 250_000, "2"),
 ]
 
+# Initial stock: about a third of the way from min to max stock, except these products,
+# which start below their minimum (they raise low-stock alerts) or with nothing at all.
+LOW_STOCK_SKUS = {"LAP-1601", "ACC-HDS1", "AUT-BAT1", "HOM-VAC1", "FOO-CHE1"}
+OUT_OF_STOCK_SKUS = {"TOO-LAD1"}
+CHILLED_SKUS = {"FOO-MLK1", "FOO-YOG1", "FOO-CHE1"}  # stored in the cold zone
+
 # fmt: on
 
 
@@ -218,6 +239,7 @@ def seed(db: Session) -> SeedReport:
     products = _seed_products(db, report, categories, suppliers)
     _seed_supplier_links(db, report, products, suppliers)
     _seed_layout(db, report)
+    _seed_stock(db, report)
     return report
 
 
@@ -379,12 +401,125 @@ def _seed_layout(db: Session, report: SeedReport) -> None:
         report.created["bins"] = report.created.get("bins", 0) + result.bins_created
 
 
+def initial_quantity(product: Product) -> int:
+    if product.sku in OUT_OF_STOCK_SKUS:
+        return 0
+    if product.sku in LOW_STOCK_SKUS:
+        return max(product.min_stock // 2, 1)
+    maximum = product.max_stock or product.min_stock * 4
+    return max(product.min_stock + (maximum - product.min_stock) // 3, 1)
+
+
+def storage_zone(product: Product, quantity: int) -> str:
+    """Chilled goods in cold storage, heavy or bulky goods in bulk, the rest in picking."""
+    if product.sku in CHILLED_SKUS:
+        return "ZC"
+    if product.weight_kg > 4 or product.weight_kg * quantity > 60:
+        return "ZB"
+    return "ZA"
+
+
+def _seed_stock(db: Session, report: SeedReport) -> None:
+    """Receive initial stock into empty bins (one product per bin), through the service."""
+    inventory = InventoryService(db, update_alerts=False)  # alerts once, at the end
+    stocked = set(db.scalars(select(Inventory.product_id).distinct()))
+    bins_by_zone: dict[str, list[Bin]] = {}
+    for bin_ in db.scalars(select(Bin).where(Bin.is_active.is_(True)).order_by(Bin.location_code)):
+        bins_by_zone.setdefault(bin_.location_code.split("-")[1], []).append(bin_)
+    used_bins = set(db.scalars(select(Inventory.bin_id).distinct()))
+
+    for row in PRODUCTS:
+        product = db.scalars(select(Product).where(Product.sku == row[0])).one()
+        remaining = initial_quantity(product)
+        if remaining == 0:
+            continue  # deliberately out of stock
+        if product.id in stocked:
+            report.add("stocked products", created=False)
+            continue
+        free_bins = (
+            b for b in bins_by_zone[storage_zone(product, remaining)] if b.id not in used_bins
+        )
+        while remaining > 0:
+            bin_ = next(free_bins, None)
+            if bin_ is None:
+                raise SeedError(f"No free bin left for {product.sku}")
+            fits = min(
+                int(bin_.max_weight_kg // product.weight_kg),
+                int(bin_.max_volume_cm3 // product.volume_cm3),
+            )
+            if fits < 1:
+                continue
+            quantity = min(remaining, fits)
+            inventory.receive(
+                ReceiveRequest(
+                    product_id=product.id,
+                    bin_id=bin_.id,
+                    quantity=quantity,
+                    reason="Initial stock (demo data)",
+                ),
+                user=None,
+            )
+            used_bins.add(bin_.id)
+            remaining -= quantity
+        report.add("stocked products", created=True)
+
+    AlertService(db).evaluate(product_ids=db.scalars(select(Product.id)).all())
+    db.commit()
+    _seed_pending_request(db, report)
+
+
+def _seed_pending_request(db: Session, report: SeedReport) -> None:
+    """One damage report by the staff user, waiting for the manager (approval queue demo)."""
+    exists = db.scalar(select(func.count()).select_from(StockAdjustment)) > 0
+    report.add("pending requests", created=not exists)
+    if exists:
+        return
+    staff = db.scalars(select(User).where(User.email == "staff@example.com")).one()
+    product = db.scalars(select(Product).where(Product.sku == "HOM-MUG1")).one()
+    row = db.scalars(select(Inventory).where(Inventory.product_id == product.id)).first()
+    ApprovalService(db).submit_adjustment(
+        AdjustmentRequest(
+            product_id=product.id,
+            bin_id=row.bin_id,
+            kind=AdjustmentKind.DAMAGE,
+            quantity=2,
+            reason="Two mugs broken in a dropped carton",
+        ),
+        user=staff,
+    )
+
+
 # ----------------------------------------------------------------------------- reset
 def reset(db: Session) -> None:
-    """Delete catalog, warehouse layout and the demo users. Other users are kept."""
+    """Delete stock, catalog, warehouse layout and the demo users. Other users are kept.
+
+    Movements are append-only (database triggers). For this development-only reset the
+    triggers are dropped, the history deleted, and the triggers created again.
+    """
     settings = get_settings()
     if settings.app_env not in INSECURE_SECRET_ALLOWED_ENVS:
         raise SeedError(f"--reset is only allowed in development/test (APP_ENV={settings.app_env})")
+    for model in (
+        Alert,
+        CycleCountLine,
+        CycleCount,
+        StockReservation,
+        StockAdjustment,
+        StockTransfer,
+    ):
+        db.execute(delete(model))
+    for action in ("update", "delete"):
+        db.execute(text(f"DROP TRIGGER IF EXISTS inventory_movements_no_{action}"))
+    db.execute(delete(InventoryMovement))
+    for action in ("UPDATE", "DELETE"):
+        db.execute(
+            text(
+                f"CREATE TRIGGER inventory_movements_no_{action.lower()} "
+                f"BEFORE {action} ON inventory_movements "
+                "BEGIN SELECT RAISE(ABORT, 'inventory movements are immutable'); END"
+            )
+        )
+    db.execute(delete(Inventory))
     db.execute(delete(SupplierProduct))
     db.execute(delete(Product))
     db.execute(update(Category).values(parent_id=None))  # unlink the tree before deleting
@@ -419,7 +554,9 @@ def main(argv: list[str] | None = None, session_factory: SessionFactory = Sessio
         with session_factory() as db:
             if args.reset:
                 if not args.yes:
-                    answer = input("Delete ALL catalog and warehouse data and demo users? [y/N] ")
+                    answer = input(
+                        "Delete ALL stock, catalog and warehouse data and demo users? [y/N] "
+                    )
                     if answer.strip().lower() not in {"y", "yes"}:
                         print("Cancelled.")
                         return 1

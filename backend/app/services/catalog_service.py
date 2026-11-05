@@ -34,6 +34,7 @@ from app.schemas.catalog import (
     SupplierProductUpdate,
     SupplierUpdate,
 )
+from app.services.alert_service import AlertService
 
 logger = get_logger(__name__)
 
@@ -232,6 +233,9 @@ class ProductService:
             raise UnprocessableError("max_stock must be greater than or equal to min_stock")
 
         _apply(product, changes)
+        if {"min_stock", "is_active"} & changes.keys():
+            # A new minimum (or archiving) can raise or resolve a low-stock alert.
+            AlertService(self.db).evaluate(product_ids=[product.id])
         _commit(self.db, "A product with this SKU or barcode already exists")
         self.db.expire(product)
         return self.get(product.id)

@@ -1,15 +1,31 @@
 """Database access for inventory rows, movements and stock documents. Never commits."""
 
 from collections.abc import Sequence
-from typing import TypeVar
+from datetime import datetime
+from typing import Any, TypeVar
 
-from sqlalchemy import case, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.inventory import Inventory, ReservationStatus, StockReservation
+from app.models.catalog import Product
+from app.models.inventory import (
+    CycleCount,
+    Inventory,
+    InventoryMovement,
+    ReservationStatus,
+    StockAdjustment,
+    StockReservation,
+    StockTransfer,
+)
 from app.models.warehouse import Bin, Rack, Shelf, Zone, ZoneType
 
 T = TypeVar("T")
+
+
+def _like(value: str) -> str:
+    """Case-insensitive 'contains' pattern with LIKE wildcards escaped."""
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
 
 
 class InventoryRepository:
@@ -87,3 +103,158 @@ class InventoryRepository:
             )
             .order_by(StockReservation.id)
         ).all()
+
+    # ------------------------------------------------------------------ searches
+    def _page(self, query: Select, order: list[Any], offset: int, limit: int) -> tuple[list, int]:
+        total = self.db.scalar(select(func.count()).select_from(query.order_by(None).subquery()))
+        items = list(self.db.scalars(query.order_by(*order).offset(offset).limit(limit)).unique())
+        return items, total or 0
+
+    def search_inventory(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        q: str | None = None,
+        product_id: int | None = None,
+        bin_id: int | None = None,
+        warehouse_id: int | None = None,
+        zone_id: int | None = None,
+        include_empty: bool = False,
+    ) -> tuple[list[Inventory], int]:
+        """Stock rows ordered by location code, then SKU."""
+        query = (
+            select(Inventory)
+            .join(Product, Inventory.product_id == Product.id)
+            .join(Bin, Inventory.bin_id == Bin.id)
+            .join(Shelf, Bin.shelf_id == Shelf.id)
+            .join(Rack, Shelf.rack_id == Rack.id)
+            .join(Zone, Rack.zone_id == Zone.id)
+            .options(joinedload(Inventory.product), joinedload(Inventory.bin))
+        )
+        if not include_empty:
+            query = query.where(Inventory.quantity_on_hand > 0)
+        if q:
+            pattern = _like(q)
+            query = query.where(
+                or_(
+                    Product.sku.ilike(pattern, escape="\\"),
+                    Product.name.ilike(pattern, escape="\\"),
+                    Bin.location_code.ilike(pattern, escape="\\"),
+                )
+            )
+        if product_id is not None:
+            query = query.where(Inventory.product_id == product_id)
+        if bin_id is not None:
+            query = query.where(Inventory.bin_id == bin_id)
+        if zone_id is not None:
+            query = query.where(Zone.id == zone_id)
+        if warehouse_id is not None:
+            query = query.where(Zone.warehouse_id == warehouse_id)
+        return self._page(query, [Bin.location_code, Product.sku], offset, limit)
+
+    def rows_for_product(self, product_id: int) -> Sequence[Inventory]:
+        return self.db.scalars(
+            select(Inventory)
+            .join(Bin, Inventory.bin_id == Bin.id)
+            .options(joinedload(Inventory.bin), joinedload(Inventory.product))
+            .where(Inventory.product_id == product_id, Inventory.quantity_on_hand > 0)
+            .order_by(Bin.location_code)
+        ).all()
+
+    def search_movements(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        product_id: int | None = None,
+        bin_id: int | None = None,
+        movement_type: str | None = None,
+        reference_type: str | None = None,
+        reference_id: int | None = None,
+        created_by_id: int | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> tuple[list[InventoryMovement], int]:
+        """Newest first."""
+        query = select(InventoryMovement).options(
+            joinedload(InventoryMovement.product),
+            joinedload(InventoryMovement.bin),
+            joinedload(InventoryMovement.created_by),
+        )
+        filters = {
+            InventoryMovement.product_id: product_id,
+            InventoryMovement.bin_id: bin_id,
+            InventoryMovement.movement_type: movement_type,
+            InventoryMovement.reference_type: reference_type,
+            InventoryMovement.reference_id: reference_id,
+            InventoryMovement.created_by_id: created_by_id,
+        }
+        for column, value in filters.items():
+            if value is not None:
+                query = query.where(column == value)
+        if since is not None:
+            query = query.where(InventoryMovement.created_at >= since)
+        if until is not None:
+            query = query.where(InventoryMovement.created_at < until)
+        order = [InventoryMovement.created_at.desc(), InventoryMovement.id.desc()]
+        return self._page(query, order, offset, limit)
+
+    def search_reservations(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        status: str | None = None,
+        product_id: int | None = None,
+        reference_type: str | None = None,
+        reference_id: int | None = None,
+    ) -> tuple[list[StockReservation], int]:
+        query = select(StockReservation).options(
+            joinedload(StockReservation.product),
+            joinedload(StockReservation.bin),
+            joinedload(StockReservation.created_by),
+        )
+        filters = {
+            StockReservation.status: status,
+            StockReservation.product_id: product_id,
+            StockReservation.reference_type: reference_type,
+            StockReservation.reference_id: reference_id,
+        }
+        for column, value in filters.items():
+            if value is not None:
+                query = query.where(column == value)
+        order = [StockReservation.created_at.desc(), StockReservation.id.desc()]
+        return self._page(query, order, offset, limit)
+
+    def search_documents(
+        self,
+        model: type[StockAdjustment] | type[StockTransfer],
+        *,
+        offset: int,
+        limit: int,
+        status: str | None = None,
+        product_id: int | None = None,
+        requested_by_id: int | None = None,
+    ) -> tuple[list, int]:
+        """Adjustments or transfers, newest first."""
+        query = select(model)
+        if status is not None:
+            query = query.where(model.status == status)
+        if product_id is not None:
+            query = query.where(model.product_id == product_id)
+        if requested_by_id is not None:
+            query = query.where(model.requested_by_id == requested_by_id)
+        return self._page(query, [model.created_at.desc(), model.id.desc()], offset, limit)
+
+    def search_cycle_counts(
+        self, *, offset: int, limit: int, status: str | None = None, bin_id: int | None = None
+    ) -> tuple[list[CycleCount], int]:
+        query = select(CycleCount).options(joinedload(CycleCount.bin))
+        if status is not None:
+            query = query.where(CycleCount.status == status)
+        if bin_id is not None:
+            query = query.where(CycleCount.bin_id == bin_id)
+        return self._page(
+            query, [CycleCount.created_at.desc(), CycleCount.id.desc()], offset, limit
+        )

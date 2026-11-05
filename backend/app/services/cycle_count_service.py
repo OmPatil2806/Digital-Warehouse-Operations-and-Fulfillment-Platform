@@ -214,7 +214,7 @@ class CycleCountService:
 
     @staticmethod
     def _decide(count: CycleCount, approver: User, note: str | None) -> None:
-        count.decided_by_id = approver.id
+        count.decided_by = approver
         count.decided_at = datetime.now(UTC)
         count.decision_note = note
 

@@ -1,10 +1,12 @@
-"""Request schemas for inventory operations (responses are added with the endpoints)."""
+"""Request and response schemas for inventory, approvals, cycle counts and alerts."""
 
+from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.models.inventory import AdjustmentKind, ReferenceType
+from app.schemas.common import Page
 
 # One operation moves at most a million units (protects against typos like 1000000000).
 MAX_QUANTITY = 1_000_000
@@ -105,3 +107,202 @@ class CycleCountRecord(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("each product may appear only once")
         return self
+
+
+# =============================================================================== responses
+class ProductRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    sku: str
+    name: str
+
+
+class BinRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    location_code: str
+
+
+class UserRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    full_name: str
+    email: str
+
+
+class InventoryResponse(BaseModel):
+    """Stock of one product in one bin."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    product: ProductRef
+    bin: BinRef
+    quantity_on_hand: int
+    quantity_reserved: int
+    quantity_damaged: int
+    quantity_available: int
+    updated_at: datetime
+
+
+class ProductStockResponse(BaseModel):
+    """Where a product is stored and how much of it, over all bins."""
+
+    product: ProductRef
+    min_stock: int
+    quantity_on_hand: int
+    quantity_reserved: int
+    quantity_damaged: int
+    quantity_available: int
+    is_low_stock: bool
+    bins: list[InventoryResponse]
+
+
+class MovementResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    movement_type: str
+    product: ProductRef
+    bin: BinRef
+    quantity: int
+    on_hand_delta: int
+    reserved_delta: int
+    damaged_delta: int
+    on_hand_after: int
+    reserved_after: int
+    damaged_after: int
+    reference_type: str | None
+    reference_id: int | None
+    reason: str | None
+    created_by: UserRef | None
+
+
+class ReservationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    status: str
+    product: ProductRef
+    bin: BinRef
+    quantity: int
+    reference_type: str | None
+    reference_id: int | None
+    reason: str | None
+    created_by: UserRef | None
+    closed_at: datetime | None
+
+
+class _DocumentFields(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    status: str
+    product: ProductRef
+    quantity: int
+    requested_by: UserRef | None
+    decided_by: UserRef | None
+    decided_at: datetime | None
+    decision_note: str | None
+
+
+class TransferResponse(_DocumentFields):
+    from_bin: BinRef
+    to_bin: BinRef
+    reason: str | None
+
+
+class AdjustmentResponse(_DocumentFields):
+    bin: BinRef
+    kind: str
+    reason: str
+
+
+class TransferSubmitResponse(BaseModel):
+    """`applied` = done now; otherwise the transfer waits for a manager (status pending)."""
+
+    applied: bool
+    transfer: TransferResponse
+
+
+class AdjustmentSubmitResponse(BaseModel):
+    applied: bool
+    adjustment: AdjustmentResponse
+
+
+class ApprovalQueueResponse(BaseModel):
+    adjustments: list[AdjustmentResponse]
+    transfers: list[TransferResponse]
+
+
+class CycleCountLineResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    product: ProductRef
+    expected_quantity: int
+    counted_quantity: int | None
+    variance: int | None
+
+
+class CycleCountResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    status: str
+    bin: BinRef
+    note: str | None
+    requested_by: UserRef | None
+    submitted_at: datetime | None
+    decided_by: UserRef | None
+    decided_at: datetime | None
+    decision_note: str | None
+    lines: list[CycleCountLineResponse]
+
+
+class CycleCountSummary(BaseModel):
+    """A count in a list (without its lines)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    status: str
+    bin: BinRef
+    requested_by: UserRef | None
+    submitted_at: datetime | None
+
+
+class AlertResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    alert_type: str
+    severity: str
+    status: str
+    title: str
+    message: str | None
+    product: ProductRef | None
+    bin: BinRef | None
+    acknowledged_by: UserRef | None
+    acknowledged_at: datetime | None
+    resolved_by: UserRef | None
+    resolved_at: datetime | None
+
+
+InventoryPage = Page[InventoryResponse]
+MovementPage = Page[MovementResponse]
+ReservationPage = Page[ReservationResponse]
+TransferPage = Page[TransferResponse]
+AdjustmentPage = Page[AdjustmentResponse]
+CycleCountPage = Page[CycleCountSummary]
+AlertPage = Page[AlertResponse]

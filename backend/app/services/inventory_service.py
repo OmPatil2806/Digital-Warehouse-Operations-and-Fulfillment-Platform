@@ -54,12 +54,14 @@ from app.schemas.inventory import (
     ReserveRequest,
     TransferRequest,
 )
+from app.services.alert_service import AlertService
 from app.services.audit_service import AuditService
 from app.services.capacity import product_fits_bin
 
 logger = get_logger(__name__)
 
 AUDIT_ENTITY = "inventory"
+TOUCHED_KEY = "_stock_touched"  # session.info: (product_id, bin_id) pairs changed
 
 
 # ------------------------------------------------------------------------- errors
@@ -120,8 +122,11 @@ ADJUSTMENT_EFFECTS: dict[AdjustmentKind, tuple[int, int, MovementType]] = {
 
 
 class InventoryService:
-    def __init__(self, db: Session) -> None:
+    def __init__(self, db: Session, *, update_alerts: bool = True) -> None:
+        """`update_alerts=False` is for bulk loading (seed data): the caller evaluates
+        alerts once at the end instead of after every single operation."""
         self.db = db
+        self.update_alerts = update_alerts
         self.repo = InventoryRepository(db)
         self.audit = AuditService(db)
 
@@ -495,6 +500,9 @@ class InventoryService:
         user: User | None,
     ) -> InventoryMovement:
         """Apply signed deltas to `row` and write the matching movement (no commit)."""
+        # Remember what changed; alerts for it are re-evaluated just before the commit.
+        touched = self.db.info.setdefault(TOUCHED_KEY, set())
+        touched.add((row.product_id, row.bin_id))
         new_on_hand = row.quantity_on_hand + on_hand
         new_reserved = row.quantity_reserved + reserved
         new_damaged = row.quantity_damaged + damaged
@@ -574,7 +582,14 @@ class InventoryService:
         return weight, volume
 
     def commit(self) -> None:
+        """Commit the operation, after updating low-stock and over-capacity alerts."""
+        touched = self.db.info.pop(TOUCHED_KEY, set())
         try:
+            if touched and self.update_alerts:
+                AlertService(self.db).evaluate(
+                    product_ids=[product_id for product_id, _ in touched],
+                    bin_ids=[bin_id for _, bin_id in touched],
+                )
             self.db.commit()
         except StaleDataError as exc:  # another request updated the same row first
             self.db.rollback()

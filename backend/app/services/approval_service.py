@@ -241,7 +241,7 @@ class ApprovalService:
         self, document: Document, status: DocumentStatus, approver: User, note: str | None
     ) -> None:
         document.status = status
-        document.decided_by_id = approver.id
+        document.decided_by = approver
         document.decided_at = datetime.now(UTC)
         document.decision_note = note
         verb = "approved" if status == DocumentStatus.COMPLETED else "rejected"

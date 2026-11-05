@@ -15,6 +15,7 @@ const ProductsPage = lazy(() => import('../pages/ProductsPage'))
 const ProductDetailPage = lazy(() => import('../pages/ProductDetailPage'))
 const SuppliersPage = lazy(() => import('../pages/SuppliersPage'))
 const SupplierDetailPage = lazy(() => import('../pages/SupplierDetailPage'))
+const WarehouseLayoutPage = lazy(() => import('../pages/WarehouseLayoutPage'))
 
 /**
  * All page routes of the application.
@@ -39,6 +40,7 @@ export function AppRoutes() {
             <Route path="/products/:productId" element={<ProductDetailPage />} />
             <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="/suppliers/:supplierId" element={<SupplierDetailPage />} />
+            <Route path="/warehouse" element={<WarehouseLayoutPage />} />
           </Route>
 
           <Route path="/forbidden" element={<ForbiddenPage />} />

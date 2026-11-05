@@ -38,7 +38,7 @@ describe('DashboardPage', () => {
     expect(modules).toHaveTextContent('Products')
     expect(modules).toHaveTextContent('Suppliers') // manager-only
     expect(modules).not.toHaveTextContent('Users') // admin-only
-    expect(modules).toHaveTextContent('Phase 3')
+    expect(modules).toHaveTextContent('Phase 4')
   })
 
   it('shows "Checking…" while the request is pending', () => {

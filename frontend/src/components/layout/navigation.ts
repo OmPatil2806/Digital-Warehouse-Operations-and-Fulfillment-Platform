@@ -69,6 +69,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Warehouse,
         roles: ['manager', 'staff'],
         availableInPhase: 3,
+        ready: true,
       },
       {
         label: 'Inventory',

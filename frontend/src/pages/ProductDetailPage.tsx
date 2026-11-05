@@ -8,6 +8,7 @@ import { Button } from '../components/common/Button'
 import { ConfirmDialog } from '../components/common/ConfirmDialog'
 import { DataTable, type Column } from '../components/common/DataTable'
 import { DetailItem, PageHeader } from '../components/common/PageHeader'
+import { ProductStockPanel } from '../components/inventory/ProductStockPanel'
 import { ProductFormDialog } from '../components/products/ProductFormDialog'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { useApiQuery } from '../hooks/useApiQuery'
@@ -176,16 +177,11 @@ export default function ProductDetailPage() {
         </dl>
       </section>
 
-      <section
-        aria-labelledby="stock-heading"
-        className="rounded-xl border border-dashed border-slate-300 bg-white p-5"
-      >
+      <section aria-labelledby="stock-heading" className="space-y-3">
         <h2 id="stock-heading" className="flex items-center gap-2 font-medium">
           <Boxes size={16} aria-hidden="true" /> Stock
         </h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Stock per bin and movement history arrive in Phase 4 (inventory operations).
-        </p>
+        <ProductStockPanel productId={id} />
       </section>
 
       <section aria-labelledby="suppliers-heading" className="space-y-3">

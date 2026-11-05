@@ -4,7 +4,9 @@ import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as catalogApi from '../api/catalogApi'
+import * as inventoryApi from '../api/inventoryApi'
 import { makeCategory, makeOffer, makeProduct, makeSupplier, page } from '../test/catalogFixtures'
+import { makeProductStock } from '../test/inventoryFixtures'
 import { loggedInAs, renderWithAuth } from '../test/renderWithAuth'
 import type { Role } from '../types/auth'
 import ProductDetailPage from './ProductDetailPage'
@@ -16,6 +18,10 @@ vi.mock('../api/catalogApi', async (importOriginal) => ({
   updateProduct: vi.fn(),
   listCategories: vi.fn(),
   listSuppliers: vi.fn(),
+}))
+vi.mock('../api/inventoryApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/inventoryApi')>()),
+  getProductStock: vi.fn(),
 }))
 const api = vi.mocked(catalogApi)
 
@@ -33,6 +39,7 @@ beforeEach(() => {
   ])
   api.listCategories.mockResolvedValue(page([makeCategory()]))
   api.listSuppliers.mockResolvedValue(page([makeSupplier()]))
+  vi.mocked(inventoryApi.getProductStock).mockResolvedValue(makeProductStock())
 })
 
 function renderPage(role: Role = 'manager', id = '7') {
@@ -45,6 +52,20 @@ function renderPage(role: Role = 'manager', id = '7') {
 }
 
 describe('ProductDetailPage', () => {
+  it('shows where the product is stored', async () => {
+    renderPage('staff')
+
+    const stock = await screen.findByRole('region', { name: 'Stock' })
+    const bins = within(stock).getByRole('table', { name: 'Bins holding this product' })
+    expect(await within(bins).findByText('WH01-ZA-R01-S01-B01')).toBeInTheDocument()
+    expect(within(bins).getByText('WH01-ZB-R01-S01-B01')).toBeInTheDocument()
+    expect(within(stock).getByRole('link', { name: /Movement history/ })).toHaveAttribute(
+      'href',
+      '/inventory?view=movements&product=7',
+    )
+    expect(inventoryApi.getProductStock).toHaveBeenCalledWith(7)
+  })
+
   it('shows the product details and its suppliers', async () => {
     renderPage()
 

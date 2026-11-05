@@ -77,6 +77,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Boxes,
         roles: ['manager', 'staff'],
         availableInPhase: 4,
+        ready: true,
       },
     ],
   },

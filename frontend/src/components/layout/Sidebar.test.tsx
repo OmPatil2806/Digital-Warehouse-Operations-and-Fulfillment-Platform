@@ -103,12 +103,13 @@ describe('Sidebar', () => {
       ['Products', '/products'],
       ['Suppliers', '/suppliers'],
       ['Warehouse layout', '/warehouse'],
+      ['Inventory', '/inventory'],
     ])
 
-    const inventory = within(nav).getByText('Inventory').closest('[aria-disabled="true"]')
-    expect(inventory).not.toBeNull()
-    expect(inventory).toHaveAttribute('title', 'Coming in Phase 4')
-    expect(inventory).toHaveTextContent('P4')
+    const fulfillment = within(nav).getByText('Fulfillment').closest('[aria-disabled="true"]')
+    expect(fulfillment).not.toBeNull()
+    expect(fulfillment).toHaveAttribute('title', 'Coming in Phase 5')
+    expect(fulfillment).toHaveTextContent('P5')
   })
 
   it('keeps a section highlighted on its detail pages', () => {

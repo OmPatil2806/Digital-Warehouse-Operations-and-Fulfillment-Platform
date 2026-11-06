@@ -124,7 +124,7 @@ ADJUSTMENT_EFFECTS: dict[AdjustmentKind, tuple[int, int, MovementType]] = {
 class InventoryService:
     def __init__(self, db: Session, *, update_alerts: bool = True) -> None:
         """`update_alerts=False` is for bulk loading (seed data): the caller evaluates
-        alerts once at the end instead of after every single operation."""
+        alerts (and backorders) once at the end instead of after every operation."""
         self.db = db
         self.update_alerts = update_alerts
         self.repo = InventoryRepository(db)
@@ -261,50 +261,85 @@ class InventoryService:
         reference = (
             (data.reference_type, data.reference_id) if data.reference_type is not None else None
         )
-        result = ReservationResult(reservations=[], movements=[])
         try:
-            for row, quantity in plan:
-                reservation = self.repo.add(
-                    StockReservation(
-                        product_id=product.id,
-                        bin_id=row.bin_id,
-                        quantity=quantity,
-                        status=ReservationStatus.ACTIVE,
-                        reference_type=reference[0] if reference else None,
-                        reference_id=reference[1] if reference else None,
-                        reason=data.reason,
-                        created_by_id=user.id if user else None,
-                    )
-                )
-                self.db.flush()
-                before = _quantities(row)
-                result.movements.append(
-                    self.change(
-                        row,
-                        MovementType.RESERVATION,
-                        quantity,
-                        reserved=quantity,
-                        reference=(ReferenceType.RESERVATION, reservation.id),
-                        reason=data.reason,
-                        user=user,
-                    )
-                )
-                self.audit.record(
-                    "inventory.reserve",
-                    AUDIT_ENTITY,
-                    row.id,
-                    summary=(
-                        f"Reserved {quantity} x {product.sku} in {row.bin.location_code}"
-                        + _for_reference(reference)
-                    ),
-                    changes=_diff(before, row),
-                    actor=user,
-                )
-                result.reservations.append(reservation)
+            result = self._create_reservations(
+                product, plan, reference=reference, reason=data.reason, user=user
+            )
         except Exception:
             self.db.rollback()
             raise
         self.commit()
+        return result
+
+    def reserve_available(
+        self,
+        product: Product,
+        quantity: int,
+        *,
+        reference: tuple[ReferenceType, int],
+        warehouse_id: int | None,
+        user: User | None,
+        reason: str | None = None,
+    ) -> ReservationResult:
+        """Hold up to `quantity` units, as many as are available now (no commit).
+
+        Used for orders: what cannot be reserved yet stays backordered. Bins are chosen
+        like in `reserve` (picking zones first, then racks closest to packing).
+        """
+        plan = self._plan(product, quantity, warehouse_id=warehouse_id)
+        return self._create_reservations(
+            product, plan, reference=reference, reason=reason, user=user
+        )
+
+    def _create_reservations(
+        self,
+        product: Product,
+        plan: list[tuple[Inventory, int]],
+        *,
+        reference: tuple[ReferenceType, int] | None,
+        reason: str | None,
+        user: User | None,
+    ) -> ReservationResult:
+        """One reservation (and RESERVATION movement) per planned bin (no commit)."""
+        result = ReservationResult(reservations=[], movements=[])
+        for row, quantity in plan:
+            reservation = self.repo.add(
+                StockReservation(
+                    product_id=product.id,
+                    bin_id=row.bin_id,
+                    quantity=quantity,
+                    status=ReservationStatus.ACTIVE,
+                    reference_type=reference[0] if reference else None,
+                    reference_id=reference[1] if reference else None,
+                    reason=reason,
+                    created_by_id=user.id if user else None,
+                )
+            )
+            self.db.flush()
+            before = _quantities(row)
+            result.movements.append(
+                self.change(
+                    row,
+                    MovementType.RESERVATION,
+                    quantity,
+                    reserved=quantity,
+                    reference=(ReferenceType.RESERVATION, reservation.id),
+                    reason=reason,
+                    user=user,
+                )
+            )
+            self.audit.record(
+                "inventory.reserve",
+                AUDIT_ENTITY,
+                row.id,
+                summary=(
+                    f"Reserved {quantity} x {product.sku} in {row.bin.location_code}"
+                    + _for_reference(reference)
+                ),
+                changes=_diff(before, row),
+                actor=user,
+            )
+            result.reservations.append(reservation)
         return result
 
     def release(
@@ -383,10 +418,20 @@ class InventoryService:
 
     def _allocate(self, product: Product, quantity: int) -> list[tuple[Inventory, int]]:
         """Split `quantity` over the best bins; refuse if there is not enough in total."""
-        rows = self.repo.rows_with_available_stock(product.id)
-        total = sum(row.quantity_available for row in rows)
+        plan = self._plan(product, quantity)
+        total = sum(take for _, take in plan)
         if total < quantity:
-            raise InsufficientStockError(f"Only {total} units of {product.sku} available")
+            available = sum(
+                r.quantity_available for r in self.repo.rows_with_available_stock(product.id)
+            )
+            raise InsufficientStockError(f"Only {available} units of {product.sku} available")
+        return plan
+
+    def _plan(
+        self, product: Product, quantity: int, *, warehouse_id: int | None = None
+    ) -> list[tuple[Inventory, int]]:
+        """Take up to `quantity` units from the best bins (may be fewer)."""
+        rows = self.repo.rows_with_available_stock(product.id, warehouse_id)
         plan: list[tuple[Inventory, int]] = []
         remaining = quantity
         for row in rows:
@@ -582,9 +627,19 @@ class InventoryService:
         return weight, volume
 
     def commit(self) -> None:
-        """Commit the operation, after updating low-stock and over-capacity alerts."""
+        """Commit the operation, after filling backorders and updating alerts.
+
+        Any stock change may free units for orders waiting for them (backorders), so those
+        are retried first, in the same transaction; then low-stock and over-capacity
+        alerts are evaluated for everything that changed.
+        """
         touched = self.db.info.pop(TOUCHED_KEY, set())
         try:
+            if touched and self.update_alerts:
+                from app.services.allocation_service import AllocationService  # import cycle
+
+                AllocationService(self.db).retry_backorders(p for p, _ in touched)
+                touched |= self.db.info.pop(TOUCHED_KEY, set())
             if touched and self.update_alerts:
                 AlertService(self.db).evaluate(
                     product_ids=[product_id for product_id, _ in touched],

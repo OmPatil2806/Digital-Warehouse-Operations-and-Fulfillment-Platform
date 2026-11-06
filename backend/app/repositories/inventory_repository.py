@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, TypeVar
 
-from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy import Select, case, func, or_, select, true
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.catalog import Product
@@ -64,12 +64,16 @@ class InventoryRepository:
             .where(Inventory.bin_id == bin_id, Inventory.quantity_on_hand > 0)
         ).all()
 
-    def rows_with_available_stock(self, product_id: int) -> Sequence[Inventory]:
+    def rows_with_available_stock(
+        self, product_id: int, warehouse_id: int | None = None
+    ) -> Sequence[Inventory]:
         """Rows of a product with available units in active bins, best bins first.
 
         Order: picking zones before other zones, then racks closest to packing, then
         location code (stable). Used to choose bins automatically when reserving.
+        With `warehouse_id`, only bins of that warehouse.
         """
+        self.db.flush()  # reservations made earlier in this transaction must count
         available = (
             Inventory.quantity_on_hand - Inventory.quantity_reserved - Inventory.quantity_damaged
         )
@@ -81,12 +85,32 @@ class InventoryRepository:
             .join(Zone, Rack.zone_id == Zone.id)
             .options(joinedload(Inventory.bin))
             .where(Inventory.product_id == product_id, available > 0, Bin.is_active.is_(True))
+            .where(Zone.warehouse_id == warehouse_id if warehouse_id is not None else true())
             .order_by(
                 case((Zone.zone_type == ZoneType.PICKING.value, 0), else_=1),
                 Rack.distance_to_packing_m,
                 Bin.location_code,
             )
         ).all()
+
+    def available_by_warehouse(self, product_ids: Sequence[int]) -> dict[tuple[int, int], int]:
+        """{(product_id, warehouse_id): available units in active bins}."""
+        self.db.flush()
+        available = (
+            Inventory.quantity_on_hand - Inventory.quantity_reserved - Inventory.quantity_damaged
+        )
+        rows = self.db.execute(
+            select(Inventory.product_id, Zone.warehouse_id, func.sum(available))
+            .join(Bin, Inventory.bin_id == Bin.id)
+            .join(Shelf, Bin.shelf_id == Shelf.id)
+            .join(Rack, Shelf.rack_id == Rack.id)
+            .join(Zone, Rack.zone_id == Zone.id)
+            .where(Inventory.product_id.in_(product_ids), Bin.is_active.is_(True))
+            .group_by(Inventory.product_id, Zone.warehouse_id)
+        ).all()
+        return {
+            (product_id, warehouse_id): int(total or 0) for product_id, warehouse_id, total in rows
+        }
 
     def get_reservation(self, reservation_id: int) -> StockReservation | None:
         return self.db.get(StockReservation, reservation_id)

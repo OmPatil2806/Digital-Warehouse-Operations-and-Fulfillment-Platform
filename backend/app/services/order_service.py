@@ -176,9 +176,38 @@ class OrderService:
 
     # ---------------------------------------------------------- status changes
     def confirm(self, order_id: int, *, user: User | None, note: str | None = None) -> Order:
+        """Confirm the order and reserve its stock right away.
+
+        Ends as inventory_reserved, partially_allocated or backordered.
+        """
+        from app.services.allocation_service import AllocationService
+
         order = self.get(order_id)
         self.transition(order, S.CONFIRMED, user=user, note=note)
-        self.db.commit()
+        try:
+            AllocationService(self.db).reserve_for_order(order, user=user)
+        except Exception:
+            self.db.rollback()
+            raise
+        InventoryService(self.db).commit()
+        return order
+
+    def reserve_stock(self, order_id: int, *, user: User | None) -> Order:
+        """Try again to reserve the missing units of a waiting (partly) backordered order."""
+        from app.services.allocation_service import WAITING, AllocationService
+
+        order = self.get(order_id)
+        if order.status not in WAITING:
+            raise InvalidTransitionError(
+                f"Order {order.order_number} is {_label(order.status)}; only backordered or "
+                "partially allocated orders wait for stock"
+            )
+        try:
+            AllocationService(self.db).reserve_for_order(order, user=user)
+        except Exception:
+            self.db.rollback()
+            raise
+        InventoryService(self.db).commit()
         return order
 
     def hold(self, order_id: int, *, user: User | None, reason: str) -> Order:

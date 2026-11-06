@@ -177,16 +177,18 @@ def test_confirm_records_history_and_the_milestone(
 
     service.confirm(order.id, user=manager, note="Checked by phone")
 
-    assert order.status == S.CONFIRMED
+    # No stock at all: confirmed, then backordered right away (stock is reserved on confirm)
+    assert order.status == S.BACKORDERED
     assert order.confirmed_at is not None
-    last = order.history[-1]
-    assert (last.from_status, last.to_status, last.changed_by_id, last.note) == (
+    confirmed = order.history[-2]
+    assert (confirmed.from_status, confirmed.to_status, confirmed.changed_by_id) == (
         "created",
         "confirmed",
         manager.id,
-        "Checked by phone",
     )
-    with pytest.raises(InvalidTransitionError, match="is confirmed and cannot become confirmed"):
+    assert confirmed.note == "Checked by phone"
+    assert history(order)[-1] == ("confirmed", "backordered")
+    with pytest.raises(InvalidTransitionError, match="is backordered and cannot become confirmed"):
         service.confirm(order.id, user=manager)
 
 
@@ -197,13 +199,13 @@ def test_hold_and_release_return_to_the_previous_status(
     service.confirm(order.id, user=None)
 
     service.hold(order.id, user=manager, reason="Payment not received")
-    assert (order.status, order.status_before_hold) == (S.ON_HOLD, S.CONFIRMED)
+    assert (order.status, order.status_before_hold) == (S.ON_HOLD, S.BACKORDERED)
     with pytest.raises(InvalidTransitionError, match="is on hold; release the hold first"):
         service.confirm(order.id, user=manager)  # confirming again is not "releasing"
 
     service.release_hold(order.id, user=manager, note="Paid")
-    assert (order.status, order.status_before_hold) == (S.CONFIRMED, None)
-    assert history(order)[-2:] == [("confirmed", "on_hold"), ("on_hold", "confirmed")]
+    assert (order.status, order.status_before_hold) == (S.BACKORDERED, None)
+    assert history(order)[-2:] == [("backordered", "on_hold"), ("on_hold", "backordered")]
     with pytest.raises(InvalidTransitionError, match="is not on hold"):
         service.release_hold(order.id, user=manager)
 

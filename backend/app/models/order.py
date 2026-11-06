@@ -36,7 +36,7 @@ from app.database.types import UTCDateTime
 from app.models.catalog import Money, Product
 from app.models.mixins import IdMixin, TimestampMixin, one_of
 from app.models.user import User
-from app.models.warehouse import Warehouse
+from app.models.warehouse import Bin, Warehouse
 
 
 class CustomerType(StrEnum):
@@ -330,6 +330,7 @@ class ReturnItem(IdMixin, Base):
 
     return_: Mapped[Return] = relationship(back_populates="items")
     order_item: Mapped[OrderItem] = relationship()
+    bin: Mapped[Bin | None] = relationship()
 
     def __repr__(self) -> str:
         return f"<ReturnItem {self.quantity} x item {self.order_item_id} {self.condition}>"

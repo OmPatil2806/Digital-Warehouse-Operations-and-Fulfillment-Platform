@@ -141,11 +141,11 @@ class ReturnService:
                     user=user,
                 )
                 item.condition = line.condition
-                item.bin_id = bin_.id
+                item.bin = bin_
                 item.note = line.note
                 item.order_item.quantity_returned += item.quantity
             ret.status = ReturnStatus.COMPLETED
-            ret.inspected_by_id = user.id
+            ret.inspected_by = user
             ret.completed_at = datetime.now(UTC)
             returned = sum(i.quantity_returned for i in order.items)
             shipped = sum(i.quantity_shipped for i in order.items)

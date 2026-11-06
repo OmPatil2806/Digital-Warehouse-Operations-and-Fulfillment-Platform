@@ -1,4 +1,4 @@
-"""Load a small, realistic demo dataset (users, catalog, suppliers, layout and stock).
+"""Load a small, realistic demo dataset (users, catalog, layout, stock and orders).
 
 Run from the project root, after `alembic upgrade head` (virtual environment active):
 
@@ -64,7 +64,16 @@ from app.schemas.catalog import (  # noqa: E402
     SupplierCreate,
     SupplierProductCreate,
 )
+from app.schemas.fulfillment import (  # noqa: E402
+    PackConfirmation,
+    PickConfirmation,
+    ReturnCreate,
+    ReturnInspection,
+    ShipmentCreate,
+    ShipmentEventCreate,
+)
 from app.schemas.inventory import AdjustmentRequest, ReceiveRequest  # noqa: E402
+from app.schemas.order import OrderCreate  # noqa: E402
 from app.schemas.user import UserCreate  # noqa: E402
 from app.schemas.warehouse import GenerateLayoutRequest, WarehouseCreate, ZoneCreate  # noqa: E402
 from app.services.alert_service import AlertService  # noqa: E402
@@ -75,7 +84,11 @@ from app.services.catalog_service import (  # noqa: E402
     SupplierProductService,
     SupplierService,
 )
+from app.services.fulfillment_service import FulfillmentService  # noqa: E402
 from app.services.inventory_service import InventoryService  # noqa: E402
+from app.services.order_service import OrderService  # noqa: E402
+from app.services.return_service import ReturnService  # noqa: E402
+from app.services.shipment_service import ShipmentService  # noqa: E402
 from app.services.user_service import UserService  # noqa: E402
 from app.services.warehouse_service import WarehouseService  # noqa: E402
 
@@ -204,6 +217,24 @@ CARRIERS = [
     ("GLS", "GLS Germany", "https://gls-group.com/DE/de/paketverfolgung?match={tracking_number}", 3),
 ]
 
+# (code, name, type, email, address, postal code, city, linked login)
+CUSTOMERS = [
+    ("CUST-0001", "Chris Customer", "consumer", "customer@example.com", "Marienplatz 4", "70178", "Stuttgart", "customer@example.com"),
+    ("CUST-0002", "Acme Office Supplies GmbH", "business", "purchasing@acme.example", "Industriestraße 21", "73730", "Esslingen", None),
+    ("CUST-0003", "Stuttgart Auto Service KG", "business", "parts@autoservice.example", "Hauptstätter Str. 88", "70178", "Stuttgart", None),
+]
+
+# Demo orders, each brought to a different stage: (customer, priority, [(sku, qty)], stage)
+DEMO_ORDERS = [
+    ("CUST-0001", "normal", [("ACC-MOU1", 1), ("ACC-KEY1", 1)], "returned"),
+    ("CUST-0002", "high", [("OFF-PAP1", 10), ("OFF-PEN1", 5)], "in_transit"),
+    ("CUST-0002", "normal", [("HOM-KET1", 3)], "delayed"),
+    ("CUST-0003", "urgent", [("AUT-FIL1", 4), ("AUT-WIP1", 2)], "picking"),
+    ("CUST-0002", "normal", [("LAP-1401", 2), ("ACC-HUB1", 2)], "reserved"),
+    ("CUST-0001", "low", [("TOO-LAD1", 1)], "backordered"),
+    ("CUST-0003", "normal", [("TOO-DRL1", 1)], "created"),
+]
+
 # Initial stock: about a third of the way from min to max stock, except these products,
 # which start below their minimum (they raise low-stock alerts) or with nothing at all.
 LOW_STOCK_SKUS = {"LAP-1601", "ACC-HDS1", "AUT-BAT1", "HOM-VAC1", "FOO-CHE1"}
@@ -259,6 +290,8 @@ def seed(db: Session) -> SeedReport:
     _seed_layout(db, report)
     _seed_stock(db, report)
     _seed_carriers(db, report)
+    _seed_customers(db, report)
+    _seed_orders(db, report)
     return report
 
 
@@ -429,6 +462,121 @@ def _seed_carriers(db: Session, report: SeedReport) -> None:
             )
         report.add("carriers", created=code not in existing)
     db.commit()
+
+
+def _seed_customers(db: Session, report: SeedReport) -> None:
+    existing = set(db.scalars(select(Customer.code)))
+    for code, name, kind, email, address, postal, city, login in CUSTOMERS:
+        if code not in existing:
+            user = db.scalars(select(User).where(User.email == login)).first() if login else None
+            db.add(
+                Customer(
+                    code=code,
+                    name=name,
+                    customer_type=kind,
+                    email=email,
+                    address_line=address,
+                    postal_code=postal,
+                    city=city,
+                    country="Germany",
+                    user_id=user.id if user else None,
+                )
+            )
+        report.add("customers", created=code not in existing)
+    db.commit()
+
+
+def _seed_orders(db: Session, report: SeedReport) -> None:
+    """Demo orders through the real services, so every movement and audit row is real."""
+    if db.scalar(select(func.count()).select_from(Order)):
+        report.skipped["orders"] = len(DEMO_ORDERS)
+        return
+    manager = db.scalars(select(User).where(User.email == "manager@example.com")).one()
+    staff = db.scalars(select(User).where(User.email == "staff@example.com")).one()
+    orders = OrderService(db)
+    fulfillment = FulfillmentService(db)
+    shipments = ShipmentService(db)
+    dhl = db.scalars(select(Carrier).where(Carrier.code == "DHL")).one()
+
+    for code, priority, lines, stage in DEMO_ORDERS:
+        customer = db.scalars(select(Customer).where(Customer.code == code)).one()
+        products = {
+            p.sku: p
+            for p in db.scalars(select(Product).where(Product.sku.in_([s for s, _ in lines])))
+        }
+        order = orders.create(
+            OrderCreate(
+                customer_id=customer.id,
+                priority=priority,
+                items=[{"product_id": products[sku].id, "quantity": q} for sku, q in lines],
+            ),
+            user=manager,
+        )
+        report.add("orders", created=True)
+        if stage == "created":
+            continue
+        orders.confirm(order.id, user=manager)
+        if stage in ("reserved", "backordered"):
+            continue
+        tasks = fulfillment.allocate(order.id, user=manager)
+        if stage == "picking":
+            fulfillment.start(tasks[0].id, user=staff)
+            continue
+        for task in tasks:
+            fulfillment.start(task.id, user=staff)
+            fulfillment.complete(
+                task.id,
+                PickConfirmation(
+                    bin_code=task.bin.location_code,
+                    product_code=task.product.sku,
+                    quantity_picked=task.quantity,
+                ),
+                user=staff,
+            )
+        packing = fulfillment.packing_task_for_order(order.id)
+        fulfillment.start_packing(packing.id, user=staff)
+        weight = sum((p.weight_kg * q for sku, q in lines for p in [products[sku]]), Decimal("0"))
+        fulfillment.complete_packing(
+            packing.id,
+            PackConfirmation(
+                items=[{"product_id": products[sku].id, "quantity": q} for sku, q in lines],
+                package_count=1,
+                weight_kg=(weight + Decimal("0.5")).quantize(Decimal("0.001")),
+            ),
+            user=staff,
+        )
+        shipment = shipments.create(order.id, ShipmentCreate(carrier_id=dhl.id), user=staff)
+        shipments.add_event(
+            shipment.id,
+            ShipmentEventCreate(event_type="in_transit", location="DHL hub Stuttgart"),
+            user=staff,
+        )
+        if stage == "delayed":
+            shipments.add_event(
+                shipment.id,
+                ShipmentEventCreate(event_type="delayed", description="Vehicle breakdown"),
+                user=staff,
+            )
+        if stage == "returned":
+            shipments.add_event(
+                shipment.id,
+                ShipmentEventCreate(event_type="delivered", location="Front door"),
+                user=staff,
+            )
+            mouse = products["ACC-MOU1"]
+            ret = ReturnService(db).open(
+                order.id,
+                ReturnCreate(
+                    reason="Does not work with my laptop",
+                    items=[{"product_id": mouse.id, "quantity": 1}],
+                ),
+                user=manager,
+            )
+            ReturnService(db).inspect(
+                ret.id,
+                ReturnInspection(items=[{"product_id": mouse.id, "condition": "restock"}]),
+                user=staff,
+            )
 
 
 def initial_quantity(product: Product) -> int:

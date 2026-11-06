@@ -7,10 +7,15 @@ from app.api.v1 import (
     audit,
     auth,
     categories,
+    customers,
     cycle_counts,
+    fulfillment,
     health,
     inventory,
+    orders,
     products,
+    returns,
+    shipments,
     suppliers,
     users,
     warehouses,
@@ -28,3 +33,8 @@ api_router.include_router(audit.router)
 api_router.include_router(inventory.router)
 api_router.include_router(cycle_counts.router)
 api_router.include_router(alerts.router)
+api_router.include_router(customers.router)
+api_router.include_router(orders.router)
+api_router.include_router(fulfillment.router)
+api_router.include_router(shipments.router)
+api_router.include_router(returns.router)

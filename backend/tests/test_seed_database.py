@@ -60,6 +60,8 @@ def test_seed_creates_the_demo_dataset(script: ModuleType, db_session: Session) 
         "stocked products": 49,  # one product is deliberately out of stock
         "pending requests": 1,
         "carriers": 4,
+        "customers": 3,
+        "orders": 7,
     }
     assert (count(db_session, Category), count(db_session, Product)) == (8, 50)
     assert count(db_session, Bin) == 274
@@ -245,7 +247,8 @@ def test_seed_raises_exactly_the_planned_low_stock_alerts(
 ) -> None:
     script.seed(db_session)
 
-    alerts = {a.title.removeprefix("Low stock: "): a for a in db_session.scalars(select(Alert))}
+    low = select(Alert).where(Alert.alert_type == "low_stock")
+    alerts = {a.title.removeprefix("Low stock: "): a for a in db_session.scalars(low)}
     assert set(alerts) == script.LOW_STOCK_SKUS | script.OUT_OF_STOCK_SKUS
     assert {a.status for a in alerts.values()} == {"open"}  # none raised and resolved again
     assert alerts["TOO-LAD1"].severity == "critical"
@@ -280,7 +283,7 @@ def test_reset_also_removes_orders_and_picking(script: ModuleType, db_session: S
     from tests.factories import create_customer
 
     script.seed(db_session)
-    customer = create_customer(db_session)
+    customer = create_customer(db_session, "CUST-9999")
     product = db_session.scalars(select(Product).where(Product.sku == "LAP-1401")).one()
     orders = OrderService(db_session)
     order = orders.create(
@@ -295,3 +298,24 @@ def test_reset_also_removes_orders_and_picking(script: ModuleType, db_session: S
     assert count(db_session, Order) == 0
     assert count(db_session, PickingTask) == 0
     assert count(db_session, Product) == 0
+
+
+def test_demo_orders_reach_their_stages(script: ModuleType, db_session: Session) -> None:
+    from app.models.order import Customer, Order
+
+    script.seed(db_session)
+
+    statuses = [o.status for o in db_session.scalars(select(Order).order_by(Order.id))]
+    assert statuses == [
+        "returned",
+        "shipped",
+        "delayed",
+        "picking",
+        "inventory_reserved",
+        "backordered",
+        "created",
+    ]
+    chris = db_session.scalars(select(Customer).where(Customer.code == "CUST-0001")).one()
+    assert chris.user.email == "customer@example.com"
+    delay = db_session.scalars(select(Alert).where(Alert.alert_type == "delay_risk")).one()
+    assert delay.status == "open"

@@ -4,7 +4,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from app.schemas.common import Page
+from app.schemas.inventory import BinRef, ProductRef, UserRef
 
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 
@@ -99,3 +102,95 @@ class InspectedLine(BaseModel):
 
 class ReturnInspection(BaseModel):
     items: Annotated[list[InspectedLine], Field(min_length=1, max_length=100)]
+
+
+# =========================================================================== responses
+class OrderRef(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    order_number: str
+    priority: str
+    status: str
+
+
+class PickProductRef(ProductRef):
+    barcode: str | None  # what the picker scans
+
+
+class PickingTaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    order: OrderRef
+    sequence: int
+    product: PickProductRef
+    bin: BinRef
+    quantity: int
+    quantity_picked: int | None
+    status: str
+    assigned_to: UserRef | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    short_reason: str | None
+
+
+class PackingLine(BaseModel):
+    product: ProductRef
+    quantity_ordered: int
+    quantity_picked: int
+
+
+class PackingTaskResponse(BaseModel):
+    id: int
+    order: OrderRef
+    status: str
+    packed_by: UserRef | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    package_count: int | None
+    weight_kg: Decimal | None
+    note: str | None
+    lines: list[PackingLine]  # what has to go into the parcels
+
+
+class CarrierResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    code: str
+    name: str
+    default_transit_days: int
+    is_active: bool
+
+
+class ShipmentEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_type: str
+    occurred_at: datetime
+    location: str | None
+    description: str | None
+
+
+class ShipmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    order: OrderRef
+    carrier: CarrierResponse
+    tracking_number: str
+    tracking_url: str | None
+    status: str
+    package_count: int
+    weight_kg: Decimal
+    shipped_at: datetime
+    expected_delivery_date: date
+    delivered_at: datetime | None
+    events: list[ShipmentEventResponse]
+
+
+PickingTaskPage = Page[PickingTaskResponse]
+PackingTaskPage = Page[PackingTaskResponse]
+ShipmentPage = Page[ShipmentResponse]

@@ -21,6 +21,15 @@ from app.models.inventory import (
     StockReservation,
     StockTransfer,
 )
+from app.models.order import (
+    Customer,
+    CustomerType,
+    Order,
+    OrderItem,
+    OrderPriority,
+    OrderStatus,
+    OrderStatusHistory,
+)
 from app.models.user import ROLE_DESCRIPTIONS, RefreshToken, Role, RoleName, User, user_roles
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone, ZoneType, build_location_code
 
@@ -35,6 +44,8 @@ __all__ = [
     "AuditLog",
     "Bin",
     "Category",
+    "Customer",
+    "CustomerType",
     "CycleCount",
     "CycleCountLine",
     "CycleCountStatus",
@@ -42,6 +53,11 @@ __all__ = [
     "Inventory",
     "InventoryMovement",
     "MovementType",
+    "Order",
+    "OrderItem",
+    "OrderPriority",
+    "OrderStatus",
+    "OrderStatusHistory",
     "Product",
     "Rack",
     "ReferenceType",

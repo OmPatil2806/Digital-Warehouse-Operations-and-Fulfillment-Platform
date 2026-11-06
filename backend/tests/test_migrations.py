@@ -24,7 +24,10 @@ INVENTORY_TABLES = {
     "cycle_count_lines",
 }
 AUDIT_TABLES = {"audit_logs", "alerts"}
-ALL_TABLES = AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES | AUDIT_TABLES
+ORDER_TABLES = {"customers", "orders", "order_items", "order_status_history"}
+ALL_TABLES = (
+    AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES | AUDIT_TABLES | ORDER_TABLES
+)
 
 
 def _url(tmp_path: Path) -> str:

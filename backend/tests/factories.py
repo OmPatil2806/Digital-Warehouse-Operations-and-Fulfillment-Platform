@@ -10,6 +10,7 @@ from app.repositories.user_repository import UserRepository
 
 if TYPE_CHECKING:
     from app.models.catalog import Category, Product, Supplier
+    from app.models.order import Customer
     from app.models.warehouse import Bin
 
 DEFAULT_PASSWORD = "Passw0rd-123"
@@ -136,3 +137,13 @@ def create_bin(
     db.add(bin_)
     db.commit()
     return bin_
+
+
+# ------------------------------------------------------------------------ order helpers
+def create_customer(db: Session, code: str = "CUST-0001", **extra: object) -> "Customer":
+    from app.models.order import Customer
+
+    customer = Customer(code=code, name=extra.pop("name", f"Customer {code}"), **extra)
+    db.add(customer)
+    db.commit()
+    return customer

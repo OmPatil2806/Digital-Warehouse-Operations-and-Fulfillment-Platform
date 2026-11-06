@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 
 import { getErrorMessage } from '../api/apiClient'
 import { alertKeys } from '../api/alertsApi'
+import { listReturns, returnKeys } from '../api/fulfillmentApi'
 import { inventoryKeys } from '../api/inventoryApi'
 import {
   allocateOrder,
@@ -28,10 +29,12 @@ import {
   STATUS_LABELS,
   STATUS_TONES,
 } from '../components/orders/orderFormat'
+import { InspectDialog, ReturnDialog } from '../components/shipments/ShipmentDialogs'
+import { RETURN_TONES } from '../components/shipments/shipmentFormat'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
-import type { Order, OrderItem } from '../types/orders'
+import type { Order, OrderItem, OrderReturn } from '../types/orders'
 import { formatMoney } from '../utils/format'
 import NotFoundPage from './NotFoundPage'
 
@@ -83,6 +86,8 @@ export default function OrderDetailPage() {
 function OrderView({ order }: { order: Order }) {
   const { user } = useAuth()
   const [asking, setAsking] = useState<Asking>(null)
+  const [returning, setReturning] = useState(false)
+  const [inspecting, setInspecting] = useState<OrderReturn | null>(null)
   const manager = isOrderManager(user)
   const warehouse = isWarehouseRole(user)
   const owner = isCustomerOnly(user) // the API only shows a customer their own orders
@@ -103,6 +108,11 @@ function OrderView({ order }: { order: Order }) {
     successMessage: (tasks) => `Picking route created (${tasks.length} task(s))`,
   })
 
+  const returns = useApiQuery(
+    [...returnKeys.all, 'order', order.id],
+    () => listReturns({ order_id: order.id }),
+    { enabled: ['delivered', 'returned'].includes(order.status) },
+  )
   const shipment = useApiQuery(orderKeys.shipment(order.id), () => getOrderShipment(order.id), {
     enabled: ['shipped', 'delayed', 'delivered', 'returned'].includes(order.status),
   })
@@ -147,6 +157,13 @@ function OrderView({ order }: { order: Order }) {
           title: `Cancel ${order.order_number}?`,
           label: 'Why is the order cancelled?',
         }),
+    },
+    {
+      show:
+        ['delivered', 'returned'].includes(order.status) &&
+        order.items.some((i) => i.quantity_shipped > i.quantity_returned),
+      label: 'Return items',
+      run: () => setReturning(true),
     },
   ].filter((a) => a.show)
 
@@ -291,6 +308,43 @@ function OrderView({ order }: { order: Order }) {
         </section>
       )}
 
+      {returns.data && returns.data.items.length > 0 && (
+        <section aria-labelledby="returns-heading" className="space-y-3">
+          <h2 id="returns-heading" className="font-medium">
+            Returns
+          </h2>
+          <ul className="space-y-2">
+            {returns.data.items.map((ret) => (
+              <li
+                key={ret.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm"
+              >
+                <div>
+                  <p>
+                    <span className="font-mono text-xs font-medium">{ret.return_number}</span>{' '}
+                    <Badge tone={RETURN_TONES[ret.status]}>{ret.status}</Badge>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {ret.items
+                      .map(
+                        (i) =>
+                          `${i.quantity} × ${i.product.sku}${i.condition ? ` (${i.condition})` : ''}`,
+                      )
+                      .join(', ')}{' '}
+                    — {ret.reason}
+                  </p>
+                </div>
+                {ret.status === 'open' && warehouse && (
+                  <Button size="sm" onClick={() => setInspecting(ret)}>
+                    Inspect
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section aria-labelledby="timeline-heading" className="space-y-3">
         <h2 id="timeline-heading" className="font-medium">
           Timeline
@@ -315,6 +369,8 @@ function OrderView({ order }: { order: Order }) {
         </ol>
       </section>
 
+      <ReturnDialog order={returning ? order : null} onClose={() => setReturning(false)} />
+      <InspectDialog ret={inspecting} onClose={() => setInspecting(null)} />
       <NoteDialog
         open={asking !== null}
         title={asking?.title ?? ''}

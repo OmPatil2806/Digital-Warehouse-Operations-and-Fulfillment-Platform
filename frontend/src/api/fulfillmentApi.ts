@@ -1,5 +1,5 @@
 import type { Page } from '../types/catalog'
-import type { Carrier, PackingTask, PickingTask, Shipment } from '../types/orders'
+import type { Carrier, OrderReturn, PackingTask, PickingTask, Shipment } from '../types/orders'
 import { apiClient } from './apiClient'
 
 export const fulfillmentKeys = {
@@ -68,5 +68,73 @@ export async function createShipment(input: {
   expected_delivery_date?: string
 }): Promise<Shipment> {
   const { data } = await apiClient.post<Shipment>('/shipments', input)
+  return data
+}
+
+// --------------------------------------------------------------------- shipments
+export const shipmentKeys = {
+  all: ['shipments'] as const,
+  list: (params: object) => ['shipments', 'list', params] as const,
+}
+
+export async function listShipments(
+  params: { status?: string; q?: string; offset?: number; limit?: number } = {},
+): Promise<Page<Shipment>> {
+  const { data } = await apiClient.get<Page<Shipment>>('/shipments', {
+    params: { ...params, q: params.q || undefined, status: params.status || undefined },
+  })
+  return data
+}
+
+export type TrackingEventType =
+  'in_transit' | 'out_for_delivery' | 'delayed' | 'delivered' | 'exception'
+
+export async function addShipmentEvent(
+  id: number,
+  input: { event_type: TrackingEventType; location?: string; description?: string },
+): Promise<Shipment> {
+  const { data } = await apiClient.post<Shipment>(`/shipments/${id}/events`, input)
+  return data
+}
+
+export async function checkDelays(): Promise<Shipment[]> {
+  const { data } = await apiClient.post<Shipment[]>('/shipments/check-delays')
+  return data
+}
+
+// ----------------------------------------------------------------------- returns
+export const returnKeys = {
+  all: ['returns'] as const,
+  list: (params: object) => ['returns', 'list', params] as const,
+}
+
+export async function listReturns(
+  params: { status?: string; order_id?: number; offset?: number; limit?: number } = {},
+): Promise<Page<OrderReturn>> {
+  const { data } = await apiClient.get<Page<OrderReturn>>('/returns', {
+    params: { ...params, status: params.status || undefined },
+  })
+  return data
+}
+
+export async function openReturn(input: {
+  order_id: number
+  reason: string
+  items: { product_id: number; quantity: number }[]
+}): Promise<OrderReturn> {
+  const { data } = await apiClient.post<OrderReturn>('/returns', input)
+  return data
+}
+
+export async function inspectReturn(
+  id: number,
+  items: { product_id: number; condition: 'restock' | 'damaged'; note?: string }[],
+): Promise<OrderReturn> {
+  const { data } = await apiClient.post<OrderReturn>(`/returns/${id}/inspect`, { items })
+  return data
+}
+
+export async function cancelReturn(id: number): Promise<OrderReturn> {
+  const { data } = await apiClient.post<OrderReturn>(`/returns/${id}/cancel`)
   return data
 }

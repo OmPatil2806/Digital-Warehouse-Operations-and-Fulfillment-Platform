@@ -133,13 +133,14 @@ describe('Sidebar', () => {
       ['Inventory', '/inventory'],
       ['Orders', '/orders'],
       ['Fulfillment', '/fulfillment'],
+      ['Shipments', '/shipments'],
       ['Alerts', '/alerts'],
     ])
 
-    const shipments = within(nav).getByText('Shipments').closest('[aria-disabled="true"]')
-    expect(shipments).not.toBeNull()
-    expect(shipments).toHaveAttribute('title', 'Coming in Phase 5')
-    expect(shipments).toHaveTextContent('P5')
+    const insights = within(nav).getByText('ML insights').closest('[aria-disabled="true"]')
+    expect(insights).not.toBeNull()
+    expect(insights).toHaveAttribute('title', 'Coming in Phase 9')
+    expect(insights).toHaveTextContent('P9')
   })
 
   it('keeps a section highlighted on its detail pages', () => {

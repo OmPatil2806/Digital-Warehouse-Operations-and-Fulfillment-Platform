@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { AxiosError, AxiosHeaders, type AxiosResponse } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as fulfillmentApi from '../api/fulfillmentApi'
 import * as ordersApi from '../api/ordersApi'
+import { page } from '../test/catalogFixtures'
 import { makeOrder, makeShipment } from '../test/orderFixtures'
 import { loggedInAs, renderWithAuth } from '../test/renderWithAuth'
 import type { Role } from '../types/auth'
@@ -16,6 +18,11 @@ vi.mock('../api/ordersApi', async (importOriginal) => ({
   orderAction: vi.fn(),
   allocateOrder: vi.fn(),
   getOrderShipment: vi.fn(),
+}))
+vi.mock('../api/fulfillmentApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/fulfillmentApi')>()),
+  listReturns: vi.fn(),
+  openReturn: vi.fn(),
 }))
 const api = vi.mocked(ordersApi)
 
@@ -30,6 +37,18 @@ beforeEach(() => {
   )
   api.allocateOrder.mockResolvedValue([{}, {}])
   api.getOrderShipment.mockResolvedValue(makeShipment())
+  vi.mocked(fulfillmentApi.listReturns).mockResolvedValue(page([]))
+  vi.mocked(fulfillmentApi.openReturn).mockResolvedValue({
+    id: 5,
+    return_number: 'RT-2026-000001',
+    order_id: 1,
+    order_number: 'SO-2026-000001',
+    status: 'open',
+    reason: 'Too many',
+    created_at: '',
+    completed_at: null,
+    items: [],
+  })
 })
 
 function renderPage(role: Role = 'manager', order?: Partial<Order>) {
@@ -141,5 +160,32 @@ describe('OrderDetailPage', () => {
     renderPage('customer')
 
     expect(await screen.findByRole('heading', { name: /not found/i })).toBeInTheDocument()
+  })
+
+  it('a delivered order can be returned (never more than was shipped)', async () => {
+    const delivered = makeOrder().items[0]
+    const user = renderPage('customer', {
+      status: 'delivered',
+      next_statuses: ['returned'],
+      items: [{ ...delivered, quantity_picked: 2, quantity_packed: 2, quantity_shipped: 2 }],
+    })
+
+    await user.click(await screen.findByRole('button', { name: 'Return items' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Return items of SO-2026-000001' }))
+    expect(dialog.getByText('up to 2')).toBeInTheDocument()
+    await user.type(dialog.getByRole('textbox', { name: 'Return quantity of LAP-1401' }), '3')
+    await user.type(dialog.getByRole('textbox', { name: /Reason/ }), 'Too many')
+    await user.click(dialog.getByRole('button', { name: 'Open return' }))
+    expect(dialog.getByRole('alert')).toHaveTextContent('LAP-1401: between 0 and 2')
+
+    await user.clear(dialog.getByRole('textbox', { name: 'Return quantity of LAP-1401' }))
+    await user.type(dialog.getByRole('textbox', { name: 'Return quantity of LAP-1401' }), '1')
+    await user.click(dialog.getByRole('button', { name: 'Open return' }))
+    await waitFor(() =>
+      expect(fulfillmentApi.openReturn).toHaveBeenCalledWith(
+        { order_id: 1, reason: 'Too many', items: [{ product_id: 7, quantity: 1 }] },
+        expect.anything(),
+      ),
+    )
   })
 })

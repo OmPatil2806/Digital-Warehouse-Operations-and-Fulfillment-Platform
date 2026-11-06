@@ -22,6 +22,7 @@ const CycleCountPage = lazy(() => import('../pages/CycleCountPage'))
 const AlertsPage = lazy(() => import('../pages/AlertsPage'))
 const OrdersPage = lazy(() => import('../pages/OrdersPage'))
 const FulfillmentPage = lazy(() => import('../pages/FulfillmentPage'))
+const ShipmentsPage = lazy(() => import('../pages/ShipmentsPage'))
 const OrderDetailPage = lazy(() => import('../pages/OrderDetailPage'))
 const AuditLogPage = lazy(() => import('../pages/AuditLogPage'))
 
@@ -43,6 +44,7 @@ export function AppRoutes() {
           <Route index element={<DashboardPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/orders/:orderId" element={<OrderDetailPage />} />
+          <Route path="/shipments" element={<ShipmentsPage />} />
 
           {/* Warehouse roles (admin, manager, staff) */}
           <Route element={<ProtectedRoute roles={['manager', 'staff']} />}>

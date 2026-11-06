@@ -170,6 +170,7 @@ WH01 - ZA - R05 - S03 - B08
 | Stock, movements, requests, cycle counts | admin, manager, staff | see [Inventory Operations](#inventory-operations) |
 | Alerts | admin, manager, staff | admin, manager |
 | Audit log | admin | nobody (append-only) |
+| Orders, shipments, returns | warehouse roles; customers: their own | see [Orders & Fulfillment](#orders--fulfillment) |
 
 ### Demo data
 
@@ -179,7 +180,7 @@ python scripts/seed_database.py           # add demo data (safe to run again)
 python scripts/seed_database.py --reset   # delete demo data and load it again (asks first)
 ```
 
-Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers, warehouse **WH01** with 4 zones and 274 bins, **initial stock** for 49 products (one product per bin; chilled goods in cold storage, heavy goods in bulk), 6 low-stock alerts and one damage report waiting for approval. Demo logins (development only):
+Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers, warehouse **WH01** with 4 zones and 274 bins, **initial stock** for 49 products (one product per bin; chilled goods in cold storage, heavy goods in bulk), 6 low-stock alerts, one damage report waiting for approval, 4 carriers, 3 customers (Chris Customer is the `customer@example.com` login) and 7 orders at different stages (created, backordered, reserved, picking, in transit, delayed, delivered and returned). Demo logins (development only):
 
 | Email | Role | Password |
 |-------|------|----------|
@@ -208,7 +209,7 @@ Every change writes one **immutable movement** (the database refuses UPDATE and 
 | Transfer | out of one bin, into another; only available units move; total unchanged | admin, manager, staff (*) |
 | Adjust: increase / decrease | units found / missing | admin, manager, staff (*) |
 | Adjust: damage / restore / write off | mark damaged, sellable again, remove damaged units | admin, manager, staff (*) |
-| Reserve / release | hold available units (orders in Phase 5); picking zones and racks near packing first | admin, manager |
+| Reserve / release | hold available units (orders reserve automatically); picking zones and racks near packing first | admin, manager |
 | Cycle count | count a bin; a second person approves the differences | staff count, managers approve |
 
 (*) **Manager approval ("four-eyes")**: staff adjustments that lose stock (decrease, damage, write-off) and staff transfers to another warehouse become **requests**. A request is checked when it is created and again, against the stock at that moment, when a manager approves it. Nobody can approve their own request or count.
@@ -238,6 +239,59 @@ Every change writes one **immutable movement** (the database refuses UPDATE and 
 - **Inventory**: stock per bin, "where is this product?", movement history, Receive / Move / Adjust forms with live capacity checks, **Approvals** (managers) or **My requests** (staff), and **Cycle counts**.
 - **Alerts**: everything that needs attention, with a counter in the sidebar.
 - **Audit log** (admins): who changed what and when, with old and new values.
+
+---
+
+## Orders & Fulfillment
+
+Every order follows one state machine (project document, section 9.2). Invalid changes, such as cancelling a shipped order, are refused, and every change is written to the order's history (from, to, who, why).
+
+```
+created → confirmed → inventory_reserved → allocated → picking → picked
+        → packing → packed → shipped → delivered → (returned)
+
+exceptions: partially_allocated / backordered (not enough stock yet),
+            on_hold (back to where it was), cancelled (before picking), delayed
+```
+
+| Stage | What happens |
+|-------|--------------|
+| **Place** | Prices are copied from the catalog; the shipping address from the customer; order numbers `SO-<year>-<sequence>` |
+| **Confirm** | Stock is reserved at once from one warehouse, best bins first. Missing units make the order *partially allocated* or *backordered*; they are reserved automatically when stock arrives (urgent orders first) |
+| **Allocate** | One picking task per reservation, along one route: farthest from packing first, then shelf and bin |
+| **Pick** | The picker scans the bin and the product (SKU or barcode); a `pick` movement lowers on-hand and reserved. A **short pick** writes off the missing units, opens a cycle count for the bin and reserves a replacement from another bin if possible |
+| **Pack** | The packer counts every line into the parcels (must equal what was picked) and records parcels and weight |
+| **Ship** | Carrier, tracking number (given or generated) and expected delivery date (carrier transit time in working days) |
+| **Track** | Events: in transit, out for delivery, delayed (raises a `delay_risk` alert), delivered (resolves it), exception. Overdue shipments can be marked delayed in one go |
+| **Return** | Customers open returns for delivered units (never more than shipped). Staff inspect them: *restock* or *damaged*, into a returns-zone bin, with a `return` movement |
+
+### Who can do what
+
+| Action | Who |
+|--------|-----|
+| See orders, shipments, returns | warehouse roles: all; customers: only their own (other records answer 404) |
+| Place, confirm, cancel an order | managers (for any customer); customers (for their own account) |
+| Hold, release, retry a reservation, check delays | managers |
+| Allocate, pick, pack, ship, add tracking events, inspect returns | admin, manager, staff |
+
+### Order endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` / `POST` | `/customers`, `/customers/{id}`, `/customers/me` | Customers (managers create and change them) |
+| `GET` / `POST` | `/orders`, `/orders/{id}` | List (scoped) and place orders |
+| `POST` | `/orders/{id}/confirm` · `/cancel` · `/hold` · `/release` · `/reserve` · `/allocate` | Status changes |
+| `GET` / `POST` | `/picking-tasks` · `/{id}/start` · `/{id}/complete` | Picking work queue and scan confirmation |
+| `GET` / `POST` | `/packing-tasks` · `/{id}/start` · `/{id}/complete` | Packing work queue |
+| `GET` | `/carriers` | Active carriers |
+| `GET` / `POST` | `/shipments`, `/shipments/{id}`, `/shipments/{id}/events`, `/shipments/check-delays` | Shipping and tracking |
+| `GET` / `POST` | `/returns`, `/returns/{id}/inspect` · `/cancel` | Returns |
+
+### In the web app
+
+- **Orders**: customers see *My orders* and place their own; managers order for any customer and see the available stock per line. The order page shows the lines, shipment tracking, returns, the full timeline and the next possible actions.
+- **Fulfillment** (warehouse roles): the picking queue with scan confirmation and short picks, and packing with counting, followed straight by shipping.
+- **Shipments**: tracking and updates, *Check delays* (managers), and the **Returns** tab with inspection.
 
 ---
 
@@ -275,7 +329,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 2: Authentication & authorization**: secure login and role-based access (`v0.2.0`) ✅
 - [x] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ✅
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
-- [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`) ⏭️ *next*
+- [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`) 🚧 *in progress: orders, picking, packing, shipping and returns done; supplier purchase orders next*
 - [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`)
 - [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`)
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)

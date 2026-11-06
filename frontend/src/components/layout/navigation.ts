@@ -102,6 +102,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Truck,
         roles: ['manager', 'staff', 'customer'],
         availableInPhase: 5,
+        ready: true,
       },
     ],
   },

@@ -6,7 +6,7 @@ Every model module must be imported here so that `Base.metadata` knows all table
 
 from app.models.audit import Alert, AlertSeverity, AlertStatus, AlertType, AuditAction, AuditLog
 from app.models.catalog import Category, Product, Supplier, SupplierProduct
-from app.models.fulfillment import PickingTask, PickingTaskStatus
+from app.models.fulfillment import PackingTask, PackingTaskStatus, PickingTask, PickingTaskStatus
 from app.models.inventory import (
     AdjustmentKind,
     CycleCount,
@@ -31,6 +31,13 @@ from app.models.order import (
     OrderStatus,
     OrderStatusHistory,
 )
+from app.models.shipment import (
+    Carrier,
+    Shipment,
+    ShipmentEvent,
+    ShipmentEventType,
+    ShipmentStatus,
+)
 from app.models.user import ROLE_DESCRIPTIONS, RefreshToken, Role, RoleName, User, user_roles
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone, ZoneType, build_location_code
 
@@ -44,6 +51,7 @@ __all__ = [
     "AuditAction",
     "AuditLog",
     "Bin",
+    "Carrier",
     "Category",
     "Customer",
     "CustomerType",
@@ -59,6 +67,8 @@ __all__ = [
     "OrderPriority",
     "OrderStatus",
     "OrderStatusHistory",
+    "PackingTask",
+    "PackingTaskStatus",
     "PickingTask",
     "PickingTaskStatus",
     "Product",
@@ -69,6 +79,10 @@ __all__ = [
     "Role",
     "RoleName",
     "Shelf",
+    "Shipment",
+    "ShipmentEvent",
+    "ShipmentEventType",
+    "ShipmentStatus",
     "StockAdjustment",
     "StockReservation",
     "StockTransfer",

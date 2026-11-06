@@ -302,7 +302,7 @@ def test_the_main_flow_is_allowed_end_to_end(service: OrderService, customer, pr
         (S.CREATED, S.SHIPPED),
         (S.CREATED, S.INVENTORY_RESERVED),  # must be confirmed first
         (S.CONFIRMED, S.PICKING),
-        (S.PICKED, S.CANCELLED),
+        (S.PACKED, S.CANCELLED),
         (S.SHIPPED, S.CANCELLED),
         (S.PACKED, S.DELIVERED),
         (S.DELIVERED, S.PICKING),

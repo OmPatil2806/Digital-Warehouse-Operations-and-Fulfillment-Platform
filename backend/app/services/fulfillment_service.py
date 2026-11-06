@@ -1,4 +1,6 @@
-"""Picking: turning an order's reservations into a walking route, and confirming picks.
+"""Picking and packing.
+
+Picking: turning an order's reservations into a walking route, and confirming picks.
 
     allocate   inventory_reserved -> allocated   one picking task per reservation
     start      allocated -> picking              (first task started)
@@ -16,6 +18,10 @@ Short pick (fewer units in the bin than the system expected):
   bin so a second person checks it (four-eyes),
 - the missing units are reserved from another bin if possible (a new task is added to
   the route); otherwise the line ships short, which the order history records.
+
+Packing (picked -> packing -> packed): when the last pick is confirmed a packing task is
+created; the packer counts each line into the parcels (must equal what was picked) and
+records the number of parcels and the total weight, which the shipment then uses.
 """
 
 from collections.abc import Sequence
@@ -26,7 +32,13 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.logging import get_logger
 from app.exceptions import ConflictError, NotFoundError, UnprocessableError
-from app.models.fulfillment import OPEN_PICKING_STATUSES, PickingTask, PickingTaskStatus
+from app.models.fulfillment import (
+    OPEN_PICKING_STATUSES,
+    PackingTask,
+    PackingTaskStatus,
+    PickingTask,
+    PickingTaskStatus,
+)
 from app.models.inventory import (
     AdjustmentKind,
     DocumentStatus,
@@ -38,7 +50,7 @@ from app.models.inventory import (
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.models.warehouse import Bin, Rack, Shelf
-from app.schemas.fulfillment import PickConfirmation
+from app.schemas.fulfillment import PackConfirmation, PickConfirmation
 from app.services.audit_service import AuditService
 from app.services.cycle_count_service import CycleCountService
 from app.services.inventory_service import InventoryService
@@ -48,10 +60,15 @@ logger = get_logger(__name__)
 
 S = OrderStatus
 T = PickingTaskStatus
+P = PackingTaskStatus
 
 
 class PickingTaskNotFoundError(NotFoundError):
     message = "Picking task not found"
+
+
+class PackingTaskNotFoundError(NotFoundError):
+    message = "Packing task not found"
 
 
 def route_key(bin_: Bin) -> tuple:
@@ -276,6 +293,68 @@ class FulfillmentService:
         missing = sum(i.quantity - i.quantity_picked for i in order.items)
         note = "All units picked" if not missing else f"Picked with {missing} unit(s) short"
         self.orders.transition(order, S.PICKED, user=user, note=note)
+        if any(item.quantity_picked for item in order.items):
+            self.db.add(PackingTask(order_id=order.id, status=P.PENDING))  # to the packing station
+
+    # ================================================================ packing
+    def get_packing_task(self, task_id: int) -> PackingTask:
+        task = self.db.get(PackingTask, task_id)
+        if task is None:
+            raise PackingTaskNotFoundError()
+        return task
+
+    def packing_task_for_order(self, order_id: int) -> PackingTask | None:
+        return self.db.scalar(select(PackingTask).where(PackingTask.order_id == order_id))
+
+    def start_packing(self, task_id: int, *, user: User) -> PackingTask:
+        task = self.get_packing_task(task_id)
+        if task.status != P.PENDING:
+            raise ConflictError(f"Packing task {task.id} is already {_label(task.status)}")
+        task.status = P.IN_PROGRESS
+        task.packed_by = user
+        task.started_at = datetime.now(UTC)
+        self.orders.transition(task.order, S.PACKING, user=user, note=f"Packed by {user.full_name}")
+        self.db.commit()
+        return task
+
+    def complete_packing(self, task_id: int, data: PackConfirmation, *, user: User) -> PackingTask:
+        """The packer confirms every picked line went into the parcels (-> packed)."""
+        task = self.get_packing_task(task_id)
+        if task.status != P.IN_PROGRESS:
+            raise ConflictError(
+                f"Packing task {task.id} is {_label(task.status)}; start it before confirming"
+            )
+        order = task.order
+        counted = {line.product_id: line.quantity for line in data.items}
+        problems = []
+        for item in order.items:
+            if item.quantity_picked == 0:
+                continue  # nothing was picked for this line (shipped short)
+            packed = counted.pop(item.product_id, 0)
+            if packed != item.quantity_picked:
+                problems.append(
+                    f"{item.product.sku}: {packed} packed, {item.quantity_picked} picked"
+                )
+        problems += [f"product {pid} is not part of this order" for pid in counted]
+        if problems:
+            raise UnprocessableError(
+                "Packed items do not match the picked items: " + "; ".join(problems)
+            )
+        for item in order.items:
+            item.quantity_packed = item.quantity_picked
+        task.status = P.COMPLETED
+        task.completed_at = datetime.now(UTC)
+        task.package_count = data.package_count
+        task.weight_kg = data.weight_kg
+        task.note = data.note
+        self.orders.transition(
+            order,
+            S.PACKED,
+            user=user,
+            note=f"{data.package_count} parcel(s), {data.weight_kg} kg",
+        )
+        self.db.commit()
+        return task
 
 
 def _label(status: str) -> str:

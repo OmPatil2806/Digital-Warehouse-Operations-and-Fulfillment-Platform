@@ -59,6 +59,7 @@ def test_seed_creates_the_demo_dataset(script: ModuleType, db_session: Session) 
         "bins": 274,
         "stocked products": 49,  # one product is deliberately out of stock
         "pending requests": 1,
+        "carriers": 4,
     }
     assert (count(db_session, Category), count(db_session, Product)) == (8, 50)
     assert count(db_session, Bin) == 274

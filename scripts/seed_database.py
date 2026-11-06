@@ -36,7 +36,7 @@ from app.core.config import INSECURE_SECRET_ALLOWED_ENVS, get_settings  # noqa: 
 from app.database.session import SessionLocal  # noqa: E402
 from app.models.audit import Alert  # noqa: E402
 from app.models.catalog import Category, Product, Supplier, SupplierProduct  # noqa: E402
-from app.models.fulfillment import PickingTask  # noqa: E402
+from app.models.fulfillment import PackingTask, PickingTask  # noqa: E402
 from app.models.inventory import (  # noqa: E402
     AdjustmentKind,
     CycleCount,
@@ -48,6 +48,7 @@ from app.models.inventory import (  # noqa: E402
     StockTransfer,
 )
 from app.models.order import Customer, Order, OrderItem, OrderStatusHistory  # noqa: E402
+from app.models.shipment import Carrier, Shipment, ShipmentEvent  # noqa: E402
 from app.models.user import RoleName, User  # noqa: E402
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone  # noqa: E402
 from app.schemas.catalog import (  # noqa: E402
@@ -188,6 +189,14 @@ ZONES = [
     ("ZR", "Returns", "returns", 1, 2, 5, "100", 250_000, "2"),
 ]
 
+# (code, name, tracking URL, transit working days)
+CARRIERS = [
+    ("DHL", "DHL Paket", "https://www.dhl.de/de/privatkunden/pakete-empfangen/verfolgen.html?piececode={tracking_number}", 2),
+    ("DPD", "DPD Deutschland", "https://tracking.dpd.de/status/de_DE/parcel/{tracking_number}", 2),
+    ("UPS", "UPS Standard", "https://www.ups.com/track?tracknum={tracking_number}", 3),
+    ("GLS", "GLS Germany", "https://gls-group.com/DE/de/paketverfolgung?match={tracking_number}", 3),
+]
+
 # Initial stock: about a third of the way from min to max stock, except these products,
 # which start below their minimum (they raise low-stock alerts) or with nothing at all.
 LOW_STOCK_SKUS = {"LAP-1601", "ACC-HDS1", "AUT-BAT1", "HOM-VAC1", "FOO-CHE1"}
@@ -242,6 +251,7 @@ def seed(db: Session) -> SeedReport:
     _seed_supplier_links(db, report, products, suppliers)
     _seed_layout(db, report)
     _seed_stock(db, report)
+    _seed_carriers(db, report)
     return report
 
 
@@ -403,6 +413,17 @@ def _seed_layout(db: Session, report: SeedReport) -> None:
         report.created["bins"] = report.created.get("bins", 0) + result.bins_created
 
 
+def _seed_carriers(db: Session, report: SeedReport) -> None:
+    existing = set(db.scalars(select(Carrier.code)))
+    for code, name, url, days in CARRIERS:
+        if code not in existing:
+            db.add(
+                Carrier(code=code, name=name, tracking_url_template=url, default_transit_days=days)
+            )
+        report.add("carriers", created=code not in existing)
+    db.commit()
+
+
 def initial_quantity(product: Product) -> int:
     if product.sku in OUT_OF_STOCK_SKUS:
         return 0
@@ -502,7 +523,17 @@ def reset(db: Session) -> None:
     if settings.app_env not in INSECURE_SECRET_ALLOWED_ENVS:
         raise SeedError(f"--reset is only allowed in development/test (APP_ENV={settings.app_env})")
     # Orders and their picking first: they point to stock reservations and products.
-    for model in (PickingTask, OrderStatusHistory, OrderItem, Order, Customer):
+    for model in (
+        ShipmentEvent,
+        Shipment,
+        Carrier,
+        PackingTask,
+        PickingTask,
+        OrderStatusHistory,
+        OrderItem,
+        Order,
+        Customer,
+    ):
         db.execute(delete(model))
     for model in (
         Alert,

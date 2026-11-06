@@ -63,7 +63,8 @@ TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
     S.INVENTORY_RESERVED: frozenset({S.ALLOCATED, S.ON_HOLD, S.CANCELLED}),
     S.ALLOCATED: frozenset({S.PICKING, S.INVENTORY_RESERVED, S.ON_HOLD, S.CANCELLED}),
     S.PICKING: frozenset({S.PICKED}),
-    S.PICKED: frozenset({S.PACKING}),
+    # Cancelling a picked order is only possible when nothing could be picked at all.
+    S.PICKED: frozenset({S.PACKING, S.CANCELLED}),
     S.PACKING: frozenset({S.PACKED}),
     S.PACKED: frozenset({S.SHIPPED}),
     S.SHIPPED: frozenset({S.DELIVERED, S.DELAYED}),
@@ -232,6 +233,10 @@ class OrderService:
     def cancel(self, order_id: int, *, user: User | None, reason: str) -> Order:
         """Cancel an order that has not started picking; its reservations are released."""
         order = self.get(order_id)
+        if order.status == S.PICKED and any(item.quantity_picked for item in order.items):
+            raise InvalidTransitionError(
+                f"Order {order.order_number} has picked goods; it cannot be cancelled any more"
+            )
         self.transition(order, S.CANCELLED, user=user, note=reason)
         order.cancel_reason = reason
         order.status_before_hold = None

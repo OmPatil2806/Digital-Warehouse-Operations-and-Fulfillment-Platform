@@ -35,6 +35,12 @@ from app.models.order import (
     ReturnItem,
     ReturnStatus,
 )
+from app.models.purchase import (
+    OPEN_PO_STATUSES,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseOrderStatus,
+)
 from app.models.shipment import (
     Carrier,
     Shipment,
@@ -46,6 +52,7 @@ from app.models.user import ROLE_DESCRIPTIONS, RefreshToken, Role, RoleName, Use
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone, ZoneType, build_location_code
 
 __all__ = [
+    "OPEN_PO_STATUSES",
     "ROLE_DESCRIPTIONS",
     "AdjustmentKind",
     "Alert",
@@ -76,6 +83,9 @@ __all__ = [
     "PickingTask",
     "PickingTaskStatus",
     "Product",
+    "PurchaseOrder",
+    "PurchaseOrderItem",
+    "PurchaseOrderStatus",
     "Rack",
     "ReferenceType",
     "RefreshToken",

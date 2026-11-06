@@ -22,6 +22,7 @@ import sys
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -55,6 +56,7 @@ from app.models.order import (  # noqa: E402
     Return,
     ReturnItem,
 )
+from app.models.purchase import PurchaseOrder, PurchaseOrderItem  # noqa: E402
 from app.models.shipment import Carrier, Shipment, ShipmentEvent  # noqa: E402
 from app.models.user import RoleName, User  # noqa: E402
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone  # noqa: E402
@@ -74,6 +76,7 @@ from app.schemas.fulfillment import (  # noqa: E402
 )
 from app.schemas.inventory import AdjustmentRequest, ReceiveRequest  # noqa: E402
 from app.schemas.order import OrderCreate  # noqa: E402
+from app.schemas.purchase import PurchaseOrderCreate  # noqa: E402
 from app.schemas.user import UserCreate  # noqa: E402
 from app.schemas.warehouse import GenerateLayoutRequest, WarehouseCreate, ZoneCreate  # noqa: E402
 from app.services.alert_service import AlertService  # noqa: E402
@@ -87,6 +90,7 @@ from app.services.catalog_service import (  # noqa: E402
 from app.services.fulfillment_service import FulfillmentService  # noqa: E402
 from app.services.inventory_service import InventoryService  # noqa: E402
 from app.services.order_service import OrderService  # noqa: E402
+from app.services.purchase_order_service import PurchaseOrderService  # noqa: E402
 from app.services.return_service import ReturnService  # noqa: E402
 from app.services.shipment_service import ShipmentService  # noqa: E402
 from app.services.user_service import UserService  # noqa: E402
@@ -237,6 +241,14 @@ DEMO_ORDERS = [
 
 # Initial stock: about a third of the way from min to max stock, except these products,
 # which start below their minimum (they raise low-stock alerts) or with nothing at all.
+# (supplier, lines, stage); stage "overdue" = ordered, expected date already passed
+DEMO_PURCHASE_ORDERS = [
+    ("SUP-004", [("AUT-BAT1", 20)], "overdue"),
+    ("SUP-010", [("TOO-LAD1", 12)], "ordered"),  # receiving it fills the backorder
+    ("SUP-009", [("LAP-1601", 10), ("ACC-HDS1", 60)], "draft"),
+]
+OVERDUE_DAYS = 4
+
 LOW_STOCK_SKUS = {"LAP-1601", "ACC-HDS1", "AUT-BAT1", "HOM-VAC1", "FOO-CHE1"}
 OUT_OF_STOCK_SKUS = {"TOO-LAD1"}
 CHILLED_SKUS = {"FOO-MLK1", "FOO-YOG1", "FOO-CHE1"}  # stored in the cold zone
@@ -292,6 +304,7 @@ def seed(db: Session) -> SeedReport:
     _seed_carriers(db, report)
     _seed_customers(db, report)
     _seed_orders(db, report)
+    _seed_purchase_orders(db, report)
     return report
 
 
@@ -579,6 +592,39 @@ def _seed_orders(db: Session, report: SeedReport) -> None:
             )
 
 
+def _seed_purchase_orders(db: Session, report: SeedReport) -> None:
+    """Supplier orders: one overdue (raises an alert), one on its way, one draft."""
+    if db.scalar(select(func.count()).select_from(PurchaseOrder)):
+        report.skipped["purchase orders"] = len(DEMO_PURCHASE_ORDERS)
+        return
+    manager = db.scalars(select(User).where(User.email == "manager@example.com")).one()
+    warehouse = db.scalars(select(Warehouse).where(Warehouse.code == WAREHOUSE[0])).one()
+    service = PurchaseOrderService(db)
+    for supplier_code, lines, stage in DEMO_PURCHASE_ORDERS:
+        supplier = db.scalars(select(Supplier).where(Supplier.code == supplier_code)).one()
+        products = {
+            p.sku: p
+            for p in db.scalars(select(Product).where(Product.sku.in_([s for s, _ in lines])))
+        }
+        po = service.create(
+            PurchaseOrderCreate(
+                supplier_id=supplier.id,
+                warehouse_id=warehouse.id,
+                notes="Demo purchase order",
+                items=[{"product_id": products[sku].id, "quantity": q} for sku, q in lines],
+            ),
+            user=manager,
+        )
+        report.add("purchase orders", created=True)
+        if stage == "draft":
+            continue
+        service.order(po.id, user=manager)
+        if stage == "overdue":  # as if it had been ordered weeks ago
+            po.expected_date = datetime.now(UTC).date() - timedelta(days=OVERDUE_DAYS)
+            db.commit()
+    service.check_overdue()
+
+
 def initial_quantity(product: Product) -> int:
     if product.sku in OUT_OF_STOCK_SKUS:
         return 0
@@ -679,6 +725,8 @@ def reset(db: Session) -> None:
         raise SeedError(f"--reset is only allowed in development/test (APP_ENV={settings.app_env})")
     # Orders and their picking first: they point to stock reservations and products.
     for model in (
+        PurchaseOrderItem,
+        PurchaseOrder,
         ReturnItem,
         Return,
         ShipmentEvent,

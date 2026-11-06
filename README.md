@@ -2,7 +2,7 @@
 
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.4.0-blue)
+![Version](https://img.shields.io/badge/version-v0.5.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -12,7 +12,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 4 (inventory operations) is complete: `v0.4.0`.** See the [Roadmap](#roadmap).
+> **Phase 5 (order fulfillment) is complete: `v0.5.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -180,7 +180,7 @@ python scripts/seed_database.py           # add demo data (safe to run again)
 python scripts/seed_database.py --reset   # delete demo data and load it again (asks first)
 ```
 
-Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers, warehouse **WH01** with 4 zones and 274 bins, **initial stock** for 49 products (one product per bin; chilled goods in cold storage, heavy goods in bulk), 6 low-stock alerts, one damage report waiting for approval, 4 carriers, 3 customers (Chris Customer is the `customer@example.com` login) and 7 orders at different stages (created, backordered, reserved, picking, in transit, delayed, delivered and returned). Demo logins (development only):
+Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers, warehouse **WH01** with 4 zones and 274 bins, **initial stock** for 49 products (one product per bin; chilled goods in cold storage, heavy goods in bulk), 6 low-stock alerts, one damage report waiting for approval, 4 carriers, 3 customers (Chris Customer is the `customer@example.com` login), 7 orders at different stages (created, backordered, reserved, picking, in transit, delayed, delivered and returned) and 3 supplier purchase orders (one overdue with an alert, one on its way that fills the backorder when received, one draft). Demo logins (development only):
 
 | Email | Role | Password |
 |-------|------|----------|
@@ -293,6 +293,27 @@ exceptions: partially_allocated / backordered (not enough stock yet),
 - **Fulfillment** (warehouse roles): the picking queue with scan confirmation and short picks, and packing with counting, followed straight by shipping.
 - **Shipments**: tracking and updates, *Check delays* (managers), and the **Returns** tab with inspection.
 
+### Supplier purchase orders
+
+New stock is ordered from suppliers with purchase orders (`PO-<year>-<sequence>`):
+
+```
+draft → ordered → partially_received → received
+  (draft or ordered, nothing received yet) → cancelled
+```
+
+- **Draft** (managers): one supplier, one warehouse, several products. The unit cost comes from the supplier's offer (else the product's purchase cost) and the expected date from the longest lead time, unless entered. The supplier's minimum order quantity is checked.
+- **Receive** (warehouse roles): line by line into bins of the PO's warehouse, also in several deliveries; never more than ordered, and the bin's weight and volume are checked. Each receipt is a normal `receipt` movement naming the PO, so waiting backorders are filled and low-stock alerts resolve at once.
+- **Overdue**: *Check overdue* raises an `overdue_supplier` alert for every PO still waiting after its expected date (critical after a week). Full receipt or cancellation resolves it.
+
+| Method | Path | Who |
+|--------|------|-----|
+| `GET` | `/purchase-orders` (`status`, `supplier_id`, `q`, `overdue`), `/purchase-orders/{id}` | admin, manager, staff |
+| `POST` | `/purchase-orders`, `/{id}/order`, `/{id}/cancel`, `/check-overdue` | admin, manager |
+| `POST` | `/purchase-orders/{id}/receive` | admin, manager, staff |
+
+In the web app: **Purchase orders** (Warehouse section): list with filters and overdue marks, a form for new orders, and the receiving form with bin lookup.
+
 ---
 
 ## Architecture
@@ -329,8 +350,8 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 2: Authentication & authorization**: secure login and role-based access (`v0.2.0`) ✅
 - [x] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ✅
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
-- [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`) 🚧 *in progress: orders, picking, packing, shipping and returns done; supplier purchase orders next*
-- [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`)
+- [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
+- [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`) ⏭️ *next*
 - [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`)
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)

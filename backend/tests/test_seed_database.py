@@ -62,6 +62,7 @@ def test_seed_creates_the_demo_dataset(script: ModuleType, db_session: Session) 
         "carriers": 4,
         "customers": 3,
         "orders": 7,
+        "purchase orders": 3,
     }
     assert (count(db_session, Category), count(db_session, Product)) == (8, 50)
     assert count(db_session, Bin) == 274
@@ -319,3 +320,23 @@ def test_demo_orders_reach_their_stages(script: ModuleType, db_session: Session)
     assert chris.user.email == "customer@example.com"
     delay = db_session.scalars(select(Alert).where(Alert.alert_type == "delay_risk")).one()
     assert delay.status == "open"
+
+
+def test_demo_purchase_orders(script: ModuleType, db_session: Session) -> None:
+    from app.models.purchase import PurchaseOrder
+
+    script.seed(db_session)
+
+    pos = db_session.scalars(select(PurchaseOrder).order_by(PurchaseOrder.id)).all()
+    assert [(p.supplier.code, p.status, p.is_overdue) for p in pos] == [
+        ("SUP-004", "ordered", True),
+        ("SUP-010", "ordered", False),
+        ("SUP-009", "draft", False),
+    ]
+    overdue = db_session.scalars(select(Alert).where(Alert.alert_type == "overdue_supplier")).one()
+    assert overdue.dedup_key == f"overdue_supplier:po:{pos[0].id}"
+    assert f"{script.OVERDUE_DAYS} day(s) late" in overdue.message
+    assert script.seed(db_session).skipped["purchase orders"] == 3
+
+    script.reset(db_session)
+    assert count(db_session, PurchaseOrder) == 0

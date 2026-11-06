@@ -14,6 +14,7 @@ from app.api.v1 import (
     inventory,
     orders,
     products,
+    purchase_orders,
     returns,
     shipments,
     suppliers,
@@ -38,3 +39,4 @@ api_router.include_router(orders.router)
 api_router.include_router(fulfillment.router)
 api_router.include_router(shipments.router)
 api_router.include_router(returns.router)
+api_router.include_router(purchase_orders.router)

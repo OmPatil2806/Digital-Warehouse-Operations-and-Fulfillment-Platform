@@ -135,28 +135,37 @@ class InventoryService:
         """Put received goods into a bin (on_hand +). Checks the bin's capacity."""
         product = self.get_product(data.product_id)
         bin_ = self.get_bin(data.bin_id)
-        self.check_fits(product, bin_, data.quantity)
+        result = self.receive_into(product, bin_, data.quantity, reason=data.reason, user=user)
+        self.commit()
+        logger.info("Received %s x %s into %s", data.quantity, product.sku, bin_.location_code)
+        return result
 
+    def receive_into(
+        self,
+        product: Product,
+        bin_: Bin,
+        quantity: int,
+        *,
+        reason: str | None,
+        user: User | None,
+        audit_summary: str | None = None,
+    ) -> StockOperationResult:
+        """Receive units into a bin without committing (purchase orders use this)."""
+        self.check_fits(product, bin_, quantity)
         row = self.repo.get_or_create_row(product.id, bin_.id)
         before = _quantities(row)
         movement = self.change(
-            row,
-            MovementType.RECEIPT,
-            data.quantity,
-            on_hand=data.quantity,
-            reason=data.reason,
-            user=user,
+            row, MovementType.RECEIPT, quantity, on_hand=quantity, reason=reason, user=user
         )
         self.audit.record(
             "inventory.receive",
             AUDIT_ENTITY,
             row.id,
-            summary=f"Received {data.quantity} x {product.sku} into {bin_.location_code}",
+            summary=audit_summary
+            or f"Received {quantity} x {product.sku} into {bin_.location_code}",
             changes=_diff(before, row),
             actor=user,
         )
-        self.commit()
-        logger.info("Received %s x %s into %s", data.quantity, product.sku, bin_.location_code)
         return StockOperationResult(inventory=row, movements=[movement])
 
     # ------------------------------------------------------------- adjustments

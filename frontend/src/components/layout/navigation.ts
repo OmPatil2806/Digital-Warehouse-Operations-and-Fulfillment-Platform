@@ -87,7 +87,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Orders',
     items: [
-      { label: 'Orders', to: '/orders', icon: ShoppingCart, availableInPhase: 5 },
+      { label: 'Orders', to: '/orders', icon: ShoppingCart, availableInPhase: 5, ready: true },
       {
         label: 'Fulfillment',
         to: '/fulfillment',

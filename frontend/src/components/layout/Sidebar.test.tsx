@@ -131,6 +131,7 @@ describe('Sidebar', () => {
       ['Suppliers', '/suppliers'],
       ['Warehouse layout', '/warehouse'],
       ['Inventory', '/inventory'],
+      ['Orders', '/orders'],
       ['Alerts', '/alerts'],
     ])
 

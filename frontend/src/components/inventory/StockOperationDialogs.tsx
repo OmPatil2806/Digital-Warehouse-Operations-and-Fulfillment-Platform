@@ -8,6 +8,7 @@ import {
   submitAdjustment,
   submitTransfer,
 } from '../../api/inventoryApi'
+import { alertKeys } from '../../api/alertsApi'
 import { warehouseKeys } from '../../api/warehouseApi'
 import { useApiMutation } from '../../hooks/useApiMutation'
 import { useApiQuery } from '../../hooks/useApiQuery'
@@ -29,7 +30,7 @@ import { BinCodeField, FitHint, ProductPicker, SourceBinSelect } from './Pickers
 
 type Errors = Partial<Record<'product' | 'bin' | 'target' | 'quantity' | 'reason', string>>
 
-const INVALIDATES = [inventoryKeys.all, warehouseKeys.all]
+const INVALIDATES = [inventoryKeys.all, warehouseKeys.all, alertKeys.all]
 
 function ServerError({ message }: { message: string | null }) {
   if (!message) return null

@@ -1,6 +1,8 @@
 import { PackageCheck } from 'lucide-react'
 import { NavLink } from 'react-router'
 
+import { alertKeys, getAlertSummary } from '../../api/alertsApi'
+import { useApiQuery } from '../../hooks/useApiQuery'
 import { useAuth } from '../../hooks/useAuth'
 import { hasAnyRole } from '../../utils/roles'
 import { isReady, NAV_SECTIONS, type NavItem, type NavSection } from './navigation'
@@ -88,7 +90,27 @@ function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
       }
     >
       <Icon size={18} aria-hidden="true" />
-      {item.label}
+      <span className="flex-1">{item.label}</span>
+      {item.badge === 'unresolved-alerts' && <AlertCount />}
     </NavLink>
+  )
+}
+
+const ALERT_REFRESH_MS = 60_000
+
+/** Number of alerts that need attention; refreshed every minute and after stock changes. */
+function AlertCount() {
+  const summary = useApiQuery(alertKeys.summary, getAlertSummary, {
+    refetchInterval: ALERT_REFRESH_MS,
+  })
+  const count = summary.data?.unresolved ?? 0
+  if (count === 0) return null
+  return (
+    <span
+      aria-label={`${count} unresolved alert${count === 1 ? '' : 's'}`}
+      className="rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white"
+    >
+      {count > 99 ? '99+' : count}
+    </span>
   )
 }

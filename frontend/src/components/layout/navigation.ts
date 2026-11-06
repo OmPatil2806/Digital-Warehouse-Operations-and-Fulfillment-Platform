@@ -5,6 +5,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   Package,
+  ScrollText,
   Settings,
   ShoppingCart,
   Truck,
@@ -25,6 +26,8 @@ export interface NavItem {
   availableInPhase: number
   /** True once the page exists. Other items are shown disabled with their phase. */
   ready?: boolean
+  /** Show a live counter next to the link. */
+  badge?: 'unresolved-alerts'
 }
 
 export interface NavSection {
@@ -104,7 +107,15 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Insights',
     items: [
-      { label: 'Alerts', to: '/alerts', icon: Bell, roles: ['manager'], availableInPhase: 6 },
+      {
+        label: 'Alerts',
+        to: '/alerts',
+        icon: Bell,
+        roles: ['manager', 'staff'],
+        availableInPhase: 4,
+        ready: true,
+        badge: 'unresolved-alerts',
+      },
       {
         label: 'ML insights',
         to: '/ml-insights',
@@ -123,6 +134,14 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: Users,
         roles: ['admin'],
         availableInPhase: 3,
+        ready: true,
+      },
+      {
+        label: 'Audit log',
+        to: '/audit-log',
+        icon: ScrollText,
+        roles: ['admin'],
+        availableInPhase: 4,
         ready: true,
       },
       {

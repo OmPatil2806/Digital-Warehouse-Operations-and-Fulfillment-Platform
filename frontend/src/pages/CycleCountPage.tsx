@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router'
 
 import { getErrorMessage } from '../api/apiClient'
 import { cycleCountAction, getCycleCount, inventoryKeys, recordCounts } from '../api/inventoryApi'
+import { alertKeys } from '../api/alertsApi'
 import { warehouseKeys } from '../api/warehouseApi'
 import { Badge } from '../components/common/Badge'
 import { Button } from '../components/common/Button'
@@ -58,7 +59,7 @@ function CountSheet({ count }: { count: CycleCount }) {
   const [rejecting, setRejecting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
 
-  const invalidates = [inventoryKeys.all, warehouseKeys.all]
+  const invalidates = [inventoryKeys.all, warehouseKeys.all, alertKeys.all]
   const save = useApiMutation(
     (lines: { product_id: number; counted_quantity: number }[]) => recordCounts(count.id, lines),
     { invalidates, successMessage: 'Counts saved', onSuccess: () => setExtra([]) },

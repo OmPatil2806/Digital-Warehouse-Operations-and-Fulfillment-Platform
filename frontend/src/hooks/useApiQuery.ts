@@ -7,6 +7,8 @@ interface ApiQueryOptions {
   enabled?: boolean
   /** Keep showing the previous page while the next one loads (tables, pagination). */
   keepPrevious?: boolean
+  /** Reload in the background every N milliseconds (e.g. a badge that should stay fresh). */
+  refetchInterval?: number
 }
 
 /**
@@ -26,6 +28,7 @@ export function useApiQuery<T>(
     queryFn: fetcher,
     enabled: options.enabled ?? true,
     placeholderData: options.keepPrevious ? keepPreviousData : undefined,
+    refetchInterval: options.refetchInterval,
   })
   return { ...query, errorMessage: query.error ? getErrorMessage(query.error) : null }
 }

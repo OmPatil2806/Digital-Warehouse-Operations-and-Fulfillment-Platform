@@ -2,7 +2,7 @@
 
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.3.0-blue)
+![Version](https://img.shields.io/badge/version-v0.4.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -12,7 +12,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 3 (master data & warehouse layout) is complete: `v0.3.0`.** See the [Roadmap](#roadmap).
+> **Phase 4 (inventory operations) is complete: `v0.4.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -157,7 +157,7 @@ WH01 - ZA - R05 - S03 - B08
 - Codes are fixed after creation (they are printed on labels).
 - **Bulk generation** creates up to 5,000 bins in one all-or-nothing transaction.
 - Archiving a zone or rack also archives everything below it; restoring works one level at a time.
-- Bins have a maximum weight and volume; `product_fits_bin()` checks capacity (used for put-away in Phase 4).
+- Bins have a maximum weight and volume; `GET /bins/{id}/fit` checks whether more units fit on top of what the bin already holds.
 
 ### Permissions
 
@@ -167,6 +167,9 @@ WH01 - ZA - R05 - S03 - B08
 | Suppliers and their offers | admin, manager, staff | admin, manager |
 | Warehouse layout | admin, manager, staff | admin, manager |
 | Users | admin | admin |
+| Stock, movements, requests, cycle counts | admin, manager, staff | see [Inventory Operations](#inventory-operations) |
+| Alerts | admin, manager, staff | admin, manager |
+| Audit log | admin | nobody (append-only) |
 
 ### Demo data
 
@@ -176,7 +179,7 @@ python scripts/seed_database.py           # add demo data (safe to run again)
 python scripts/seed_database.py --reset   # delete demo data and load it again (asks first)
 ```
 
-Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers and warehouse **WH01** with 4 zones and 274 bins. Demo logins (development only):
+Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13 barcodes), 60 supplier offers, warehouse **WH01** with 4 zones and 274 bins, **initial stock** for 49 products (one product per bin; chilled goods in cold storage, heavy goods in bulk), 6 low-stock alerts and one damage report waiting for approval. Demo logins (development only):
 
 | Email | Role | Password |
 |-------|------|----------|
@@ -186,6 +189,55 @@ Creates 4 demo users, 8 categories, 10 suppliers, 50 products (with valid EAN-13
 | `customer@example.com` | Customer | `Demo-pass-123` |
 
 `--reset` only works when `APP_ENV` is `development` or `test`, and keeps users that are not demo users.
+
+---
+
+## Inventory Operations
+
+Stock is tracked **per product and bin**:
+
+```
+available = on hand − reserved − damaged
+```
+
+Every change writes one **immutable movement** (the database refuses UPDATE and DELETE on `inventory_movements`) and one **audit record**, in the same transaction as the change. Stock can never go negative: the services and database CHECK constraints both enforce it, and concurrent changes to the same stock are refused with a 409 ("please retry") instead of being lost (optimistic locking).
+
+| Operation | Effect | Who |
+|-----------|--------|-----|
+| Receive | on hand + (bin capacity is checked, including what is already stored) | admin, manager, staff |
+| Transfer | out of one bin, into another; only available units move; total unchanged | admin, manager, staff (*) |
+| Adjust: increase / decrease | units found / missing | admin, manager, staff (*) |
+| Adjust: damage / restore / write off | mark damaged, sellable again, remove damaged units | admin, manager, staff (*) |
+| Reserve / release | hold available units (orders in Phase 5); picking zones and racks near packing first | admin, manager |
+| Cycle count | count a bin; a second person approves the differences | staff count, managers approve |
+
+(*) **Manager approval ("four-eyes")**: staff adjustments that lose stock (decrease, damage, write-off) and staff transfers to another warehouse become **requests**. A request is checked when it is created and again, against the stock at that moment, when a manager approves it. Nobody can approve their own request or count.
+
+**Alerts** are raised and resolved automatically after every stock change: *low stock* (available below the product's `min_stock`; critical at zero) and *bin over capacity*. There is at most one unresolved alert per cause; managers acknowledge or resolve them.
+
+### Inventory endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/inventory?q=&warehouse_id=&zone_id=&bin_id=&product_id=` | Stock per product and bin |
+| `GET` | `/inventory/products/{id}` | One product: totals and the bins that hold it |
+| `GET` | `/inventory/movements?product_id=&bin_id=&movement_type=&since=&until=` | Movement history, newest first |
+| `POST` | `/inventory/receive` | Receive goods into a bin |
+| `POST` / `GET` | `/inventory/adjustments` | Adjust stock (`applied: false` = request); list adjustments |
+| `POST` / `GET` | `/inventory/transfers` | Move stock; list transfers |
+| `POST` | `/inventory/{adjustments\|transfers}/{id}/approve` · `/reject` · `/cancel` | Decide or withdraw a request |
+| `GET` | `/inventory/approvals` | Requests waiting for a manager |
+| `POST` / `GET` | `/inventory/reservations` · `/{id}/release` | Reserve, list and release stock |
+| `GET` / `POST` | `/cycle-counts` · `/{id}` · `/{id}/lines` · `/submit` · `/approve` · `/reject` · `/cancel` | Cycle counts |
+| `GET` | `/alerts?unresolved=&status=&alert_type=` · `/alerts/summary` | Alerts and the unresolved count |
+| `POST` | `/alerts/{id}/acknowledge` · `/resolve` | Handle an alert (managers) |
+| `GET` | `/audit-logs?entity_type=&entity_id=&actor_id=&action=` | Audit log (admins) |
+
+### In the web app
+
+- **Inventory**: stock per bin, "where is this product?", movement history, Receive / Move / Adjust forms with live capacity checks, **Approvals** (managers) or **My requests** (staff), and **Cycle counts**.
+- **Alerts**: everything that needs attention, with a counter in the sidebar.
+- **Audit log** (admins): who changed what and when, with old and new values.
 
 ---
 
@@ -222,8 +274,8 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 1: Project foundation**: running skeleton of frontend, backend, database and CI (`v0.1.0`) ✅
 - [x] **Phase 2: Authentication & authorization**: secure login and role-based access (`v0.2.0`) ✅
 - [x] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ✅
-- [ ] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ⏭️ *next*
-- [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`)
+- [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
+- [ ] **Phase 5: Order fulfillment**: complete order lifecycle (`v0.5.0`) ⏭️ *next*
 - [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`)
 - [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`)
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
@@ -244,12 +296,12 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   │   ├── main.py           # FastAPI application (CORS, error handlers, /api/v1 router)
 │   │   ├── core/             # settings (.env), logging, security (hashing, JWT), permissions
 │   │   ├── database/         # SQLAlchemy base, engine, session and UTC datetime type
-│   │   ├── models/           # ORM tables: users & roles, catalog (categories, products, suppliers), warehouse layout
+│   │   ├── models/           # ORM tables: users & roles, catalog, warehouse layout, inventory & movements, audit log & alerts
 │   │   ├── schemas/          # Pydantic request/response models
 │   │   ├── repositories/     # database queries (no business rules)
-│   │   ├── services/         # business logic (auth, users, catalog, warehouse layout, capacity)
+│   │   ├── services/         # business logic (auth, users, catalog, layout, inventory, approvals, cycle counts, alerts, audit)
 │   │   ├── exceptions/       # application errors → JSON responses
-│   │   └── api/              # dependencies, access rules and v1 endpoints (health, auth, users, catalog, warehouses)
+│   │   └── api/              # dependencies, access rules and v1 endpoints (health, auth, users, catalog, warehouses, inventory, cycle counts, alerts, audit)
 │   ├── migrations/           # Alembic database migrations
 │   ├── tests/                # Pytest tests (temporary test database)
 │   ├── alembic.ini
@@ -259,11 +311,11 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 ├── frontend/
 │   ├── src/
 │   │   ├── api/              # Axios client (token + auto-refresh), typed API calls
-│   │   ├── components/       # DataTable, Modal, form fields…; layout/, products/, suppliers/, warehouse/, users/
+│   │   ├── components/       # DataTable, Modal, form fields…; layout/, products/, suppliers/, warehouse/, users/, inventory/
 │   │   ├── context/          # AuthProvider (current user, login, logout), ToastProvider
 │   │   ├── hooks/            # useAuth, useApiQuery / useApiMutation (TanStack Query), useUrlState, useToast
 │   │   ├── layouts/          # AuthLayout (login) and DashboardLayout (sidebar + top bar)
-│   │   ├── pages/            # Login, Dashboard, Products, Suppliers, Warehouse layout, Users, 403, 404
+│   │   ├── pages/            # Login, Dashboard, Products, Suppliers, Warehouse layout, Inventory, Cycle count, Alerts, Users, Audit log, 403, 404
 │   │   ├── routes/           # AppRoutes and ProtectedRoute
 │   │   ├── types/            # TypeScript types mirroring API schemas
 │   │   ├── utils/            # helpers (roles, permissions, formatting, API errors)
@@ -273,7 +325,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   └── vite.config.ts / vitest.config.ts / eslint.config.js
 ├── scripts/
 │   ├── create_admin.py       # create the first administrator
-│   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout)
+│   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)
 └── LICENSE
@@ -339,7 +391,7 @@ cd ..
 # Create the first administrator (asks for email, name and a hidden password)
 python scripts/create_admin.py
 
-# Optional: load demo data (products, suppliers, warehouse layout, demo users)
+# Optional: load demo data (products, suppliers, warehouse layout, stock, demo users)
 python scripts/seed_database.py
 
 # Start the API

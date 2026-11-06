@@ -1,10 +1,20 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import * as alertsApi from '../../api/alertsApi'
 import { loggedInAs, renderWithAuth } from '../../test/renderWithAuth'
 import type { Role } from '../../types/auth'
 import { Sidebar } from './Sidebar'
+
+vi.mock('../../api/alertsApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/alertsApi')>()),
+  getAlertSummary: vi.fn(),
+}))
+
+beforeEach(() => {
+  vi.mocked(alertsApi.getAlertSummary).mockResolvedValue({ unresolved: 0 })
+})
 
 function renderSidebar(...roles: Role[]) {
   const onNavigate = vi.fn()
@@ -20,6 +30,20 @@ function itemLabels(nav: HTMLElement): string[] {
 }
 
 describe('Sidebar', () => {
+  it('shows the number of unresolved alerts next to Alerts', async () => {
+    vi.mocked(alertsApi.getAlertSummary).mockResolvedValue({ unresolved: 6 })
+    const { nav } = renderSidebar('staff')
+
+    expect(await within(nav).findByLabelText('6 unresolved alerts')).toHaveTextContent('6')
+    expect(within(nav).getByRole('link', { name: /Alerts/ })).toHaveAttribute('href', '/alerts')
+  })
+
+  it('shows no badge when nothing needs attention, and none for customers', async () => {
+    const { nav } = renderSidebar('manager')
+    await vi.waitFor(() => expect(alertsApi.getAlertSummary).toHaveBeenCalled())
+    expect(within(nav).queryByLabelText(/unresolved alert/)).not.toBeInTheDocument()
+  })
+
   it.each<[Role, string[]]>([
     [
       'admin',
@@ -35,6 +59,7 @@ describe('Sidebar', () => {
         'Alerts',
         'ML insights',
         'Users',
+        'Audit log',
         'Settings',
       ],
     ],
@@ -63,6 +88,7 @@ describe('Sidebar', () => {
         'Orders',
         'Fulfillment',
         'Shipments',
+        'Alerts',
       ],
     ],
     ['customer', ['Dashboard', 'Orders', 'Shipments']],
@@ -83,6 +109,7 @@ describe('Sidebar', () => {
       'Orders',
       'Fulfillment',
       'Shipments',
+      'Alerts',
     ])
   })
 
@@ -104,6 +131,7 @@ describe('Sidebar', () => {
       ['Suppliers', '/suppliers'],
       ['Warehouse layout', '/warehouse'],
       ['Inventory', '/inventory'],
+      ['Alerts', '/alerts'],
     ])
 
     const fulfillment = within(nav).getByText('Fulfillment').closest('[aria-disabled="true"]')

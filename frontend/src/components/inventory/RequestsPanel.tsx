@@ -8,6 +8,7 @@ import {
   listMyRequests,
   type RequestKind,
 } from '../../api/inventoryApi'
+import { alertKeys } from '../../api/alertsApi'
 import { warehouseKeys } from '../../api/warehouseApi'
 import { useApiMutation } from '../../hooks/useApiMutation'
 import { useApiQuery } from '../../hooks/useApiQuery'
@@ -103,7 +104,7 @@ export function RequestsPanel() {
       note?: string
     }) => decideRequest(row.kind, row.id, action, note).then((r) => ({ ...r, kind: row.kind })),
     {
-      invalidates: [inventoryKeys.all, warehouseKeys.all],
+      invalidates: [inventoryKeys.all, warehouseKeys.all, alertKeys.all],
       successMessage: (r) =>
         `${r.kind === 'adjustments' ? 'Adjustment' : 'Transfer'} #${r.id} ${r.status === 'completed' ? 'approved and applied' : r.status}`,
       onSuccess: () => setRejecting(null),

@@ -94,6 +94,7 @@ export const NAV_SECTIONS: NavSection[] = [
         icon: ClipboardList,
         roles: ['manager', 'staff'],
         availableInPhase: 5,
+        ready: true,
       },
       {
         label: 'Shipments',

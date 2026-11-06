@@ -146,3 +146,39 @@ export interface OrderReturn {
   completed_at: string | null
   items: ReturnItem[]
 }
+
+// -------------------------------------------------------------------- fulfillment
+export interface OrderRef {
+  id: number
+  order_number: string
+  priority: OrderPriority
+  status: OrderStatus
+}
+
+export interface PickingTask {
+  id: number
+  order: OrderRef
+  sequence: number
+  product: ProductRef & { barcode: string | null }
+  bin: BinRef
+  quantity: number
+  quantity_picked: number | null
+  status: 'pending' | 'in_progress' | 'completed' | 'short' | 'cancelled'
+  assigned_to: UserRef | null
+  started_at: string | null
+  completed_at: string | null
+  short_reason: string | null
+}
+
+export interface PackingTask {
+  id: number
+  order: OrderRef
+  status: 'pending' | 'in_progress' | 'completed'
+  packed_by: UserRef | null
+  started_at: string | null
+  completed_at: string | null
+  package_count: number | null
+  weight_kg: string | null
+  note: string | null
+  lines: { product: ProductRef; quantity_ordered: number; quantity_picked: number }[]
+}

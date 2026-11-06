@@ -47,7 +47,14 @@ from app.models.inventory import (  # noqa: E402
     StockReservation,
     StockTransfer,
 )
-from app.models.order import Customer, Order, OrderItem, OrderStatusHistory  # noqa: E402
+from app.models.order import (  # noqa: E402
+    Customer,
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    Return,
+    ReturnItem,
+)
 from app.models.shipment import Carrier, Shipment, ShipmentEvent  # noqa: E402
 from app.models.user import RoleName, User  # noqa: E402
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone  # noqa: E402
@@ -524,6 +531,8 @@ def reset(db: Session) -> None:
         raise SeedError(f"--reset is only allowed in development/test (APP_ENV={settings.app_env})")
     # Orders and their picking first: they point to stock reservations and products.
     for model in (
+        ReturnItem,
+        Return,
         ShipmentEvent,
         Shipment,
         Carrier,

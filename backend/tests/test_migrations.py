@@ -34,6 +34,8 @@ ORDER_TABLES = {
     "carriers",
     "shipments",
     "shipment_events",
+    "returns",
+    "return_items",
 }
 ALL_TABLES = (
     AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES | AUDIT_TABLES | ORDER_TABLES

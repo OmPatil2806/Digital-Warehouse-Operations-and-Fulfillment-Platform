@@ -1,10 +1,10 @@
 """Request schemas for picking, packing and shipping."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 
@@ -52,3 +52,50 @@ class ShipmentCreate(BaseModel):
     ) = None
     # Defaults to today + the carrier's transit days (working days).
     expected_delivery_date: date | None = None
+
+
+Text = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)]
+
+
+class ShipmentEventCreate(BaseModel):
+    """A tracking update from the carrier (or entered by staff)."""
+
+    event_type: Literal["in_transit", "out_for_delivery", "delayed", "delivered", "exception"]
+    occurred_at: datetime | None = None  # default: now
+    location: Annotated[str, StringConstraints(strip_whitespace=True, max_length=120)] | None = None
+    description: Text | None = None
+
+    @model_validator(mode="after")
+    def _exception_needs_text(self) -> "ShipmentEventCreate":
+        if self.event_type == "exception" and not self.description:
+            raise ValueError("describe the exception (e.g. address not found)")
+        return self
+
+
+class ReturnLine(BaseModel):
+    product_id: int
+    quantity: Annotated[int, Field(ge=1, le=100_000)]
+
+
+class ReturnCreate(BaseModel):
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=255)]
+    items: Annotated[list[ReturnLine], Field(min_length=1, max_length=100)]
+
+    @model_validator(mode="after")
+    def _one_line_per_product(self) -> "ReturnCreate":
+        ids = [line.product_id for line in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("each product may appear only once")
+        return self
+
+
+class InspectedLine(BaseModel):
+    product_id: int
+    condition: Literal["restock", "damaged"]
+    # Where the units go; default: a bin of the returns zone that has room.
+    bin_id: int | None = None
+    note: Text | None = None
+
+
+class ReturnInspection(BaseModel):
+    items: Annotated[list[InspectedLine], Field(min_length=1, max_length=100)]

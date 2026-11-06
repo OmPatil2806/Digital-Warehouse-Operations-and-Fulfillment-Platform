@@ -44,6 +44,10 @@ def over_capacity_key(bin_id: int) -> str:
     return f"{AlertType.OVER_CAPACITY.value}:bin:{bin_id}"
 
 
+def delay_key(order_id: int) -> str:
+    return f"{AlertType.DELAY_RISK.value}:order:{order_id}"
+
+
 class AlertService:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -111,6 +115,15 @@ class AlertService:
             .where(Inventory.product_id == product_id, Bin.is_active.is_(True))
         )
         return int(total or 0)
+
+    # -------------------------------------------------------- other modules
+    def raise_alert(self, alert_type: AlertType, dedup_key: str, **values: object) -> Alert:
+        """Raise (or update) the unresolved alert for this cause (no commit)."""
+        return self._raise(alert_type, dedup_key, **values)
+
+    def resolve_cause(self, dedup_key: str) -> None:
+        """The cause is gone: resolve its unresolved alert, if any (no commit)."""
+        self._resolve_automatically(dedup_key)
 
     # --------------------------------------------------------- people actions
     def get(self, alert_id: int) -> Alert:

@@ -135,7 +135,7 @@ class InventoryService:
         """Put received goods into a bin (on_hand +). Checks the bin's capacity."""
         product = self.get_product(data.product_id)
         bin_ = self.get_bin(data.bin_id)
-        self._check_fits(product, bin_, data.quantity)
+        self.check_fits(product, bin_, data.quantity)
 
         row = self.repo.get_or_create_row(product.id, bin_.id)
         before = _quantities(row)
@@ -206,7 +206,7 @@ class InventoryService:
 
         if kind is AdjustmentKind.INCREASE:
             self._require_active(product, bin_)
-            self._check_fits(product, bin_, quantity)
+            self.check_fits(product, bin_, quantity)
             row = self.repo.get_or_create_row(product.id, bin_.id)
         else:
             row = self.repo.get_row(product.id, bin_.id)
@@ -480,6 +480,49 @@ class InventoryService:
         )
         return movements
 
+    def receive_return(
+        self,
+        product: Product,
+        bin_: Bin,
+        quantity: int,
+        *,
+        damaged: bool,
+        reference: tuple[ReferenceType, int],
+        reason: str,
+        user: User | None,
+    ) -> InventoryMovement:
+        """Put returned units into a bin (RETURN: on_hand +, damaged + if damaged). No commit.
+
+        Archived products may come back; the bin must be active and have room.
+        """
+        if not bin_.is_active:
+            raise UnprocessableError(f"Bin {bin_.location_code} is archived")
+        self.check_fits(product, bin_, quantity, ignore_archived_product=True)
+        row = self.repo.get_or_create_row(product.id, bin_.id)
+        before = _quantities(row)
+        movement = self.change(
+            row,
+            MovementType.RETURN,
+            quantity,
+            on_hand=quantity,
+            damaged=quantity if damaged else 0,
+            reference=reference,
+            reason=reason,
+            user=user,
+        )
+        self.audit.record(
+            "inventory.return",
+            AUDIT_ENTITY,
+            row.id,
+            summary=(
+                f"Returned {quantity} x {product.sku} into {bin_.location_code}"
+                + (" as damaged" if damaged else "")
+            ),
+            changes=_diff(before, row),
+            actor=user,
+        )
+        return movement
+
     def _allocate(self, product: Product, quantity: int) -> list[tuple[Inventory, int]]:
         """Split `quantity` over the best bins; refuse if there is not enough in total."""
         plan = self._plan(product, quantity)
@@ -553,7 +596,7 @@ class InventoryService:
                 f"Only {available} units of {product.sku} available in {from_bin.location_code}"
             )
         # Archived products may still be moved (e.g. to clear a bin); capacity still applies.
-        self._check_fits(product, to_bin, quantity, ignore_archived_product=True)
+        self.check_fits(product, to_bin, quantity, ignore_archived_product=True)
         target = self.repo.get_or_create_row(product.id, to_bin.id)
 
         reference = (ReferenceType.TRANSFER, transfer.id)
@@ -665,7 +708,7 @@ class InventoryService:
         if not bin_.is_active:
             raise UnprocessableError(f"Bin {bin_.location_code} is archived")
 
-    def _check_fits(
+    def check_fits(
         self, product: Product, bin_: Bin, quantity: int, *, ignore_archived_product: bool = False
     ) -> None:
         weight, volume = self.bin_load(bin_.id)

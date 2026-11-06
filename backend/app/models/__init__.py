@@ -30,6 +30,10 @@ from app.models.order import (
     OrderPriority,
     OrderStatus,
     OrderStatusHistory,
+    Return,
+    ReturnCondition,
+    ReturnItem,
+    ReturnStatus,
 )
 from app.models.shipment import (
     Carrier,
@@ -76,6 +80,10 @@ __all__ = [
     "ReferenceType",
     "RefreshToken",
     "ReservationStatus",
+    "Return",
+    "ReturnCondition",
+    "ReturnItem",
+    "ReturnStatus",
     "Role",
     "RoleName",
     "Shelf",

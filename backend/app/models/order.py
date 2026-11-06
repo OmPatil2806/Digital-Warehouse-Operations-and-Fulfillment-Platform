@@ -259,3 +259,77 @@ class OrderStatusHistory(IdMixin, Base):
 
     def __repr__(self) -> str:
         return f"<OrderStatusHistory {self.from_status} -> {self.to_status}>"
+
+
+class ReturnStatus(StrEnum):
+    OPEN = "open"  # announced by the customer, goods on the way back
+    COMPLETED = "completed"  # received and inspected; stock updated
+    CANCELLED = "cancelled"  # the customer kept the goods after all
+
+
+class ReturnCondition(StrEnum):
+    RESTOCK = "restock"  # as new: back into sellable stock
+    DAMAGED = "damaged"  # into stock as damaged units (to be written off or repaired)
+
+
+class Return(IdMixin, TimestampMixin, Base):
+    """A customer return of (some of) the shipped units of an order."""
+
+    __tablename__ = "returns"
+    __table_args__ = (CheckConstraint(one_of("status", ReturnStatus), name="valid_status"),)
+
+    return_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default=ReturnStatus.OPEN, server_default="open", index=True
+    )
+    reason: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    inspected_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    order: Mapped[Order] = relationship()
+    created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id])
+    inspected_by: Mapped[User | None] = relationship(foreign_keys=[inspected_by_id])
+    items: Mapped[list["ReturnItem"]] = relationship(
+        back_populates="return_",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ReturnItem.id",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Return {self.return_number} {self.status}>"
+
+
+class ReturnItem(IdMixin, Base):
+    __tablename__ = "return_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "return_id", "order_item_id", name="uq_return_items_return_id_order_item_id"
+        ),
+        CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint(
+            f"condition IS NULL OR {one_of('condition', ReturnCondition)}", name="valid_condition"
+        ),
+    )
+
+    return_id: Mapped[int] = mapped_column(
+        ForeignKey("returns.id", ondelete="CASCADE"), nullable=False
+    )
+    order_item_id: Mapped[int] = mapped_column(
+        ForeignKey("order_items.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    quantity: Mapped[int] = mapped_column(nullable=False)
+    condition: Mapped[str | None] = mapped_column(String(20))  # set at inspection
+    # Where the units were put back (a bin in the returns zone by default).
+    bin_id: Mapped[int | None] = mapped_column(ForeignKey("bins.id", ondelete="RESTRICT"))
+    note: Mapped[str | None] = mapped_column(String(255))
+
+    return_: Mapped[Return] = relationship(back_populates="items")
+    order_item: Mapped[OrderItem] = relationship()
+
+    def __repr__(self) -> str:
+        return f"<ReturnItem {self.quantity} x item {self.order_item_id} {self.condition}>"

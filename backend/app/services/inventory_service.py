@@ -416,6 +416,70 @@ class InventoryService:
         )
         return movement
 
+    def consume_reservation(
+        self,
+        reservation: StockReservation,
+        picked: int,
+        *,
+        reference: tuple[ReferenceType, int],
+        reason: str,
+        user: User | None,
+    ) -> list[InventoryMovement]:
+        """A reservation was picked: picked units leave the bin, the rest is released.
+
+        PICK movement: on_hand -picked, reserved -picked (referencing the order).
+        RELEASE movement for units that were reserved but not picked. No commit.
+        """
+        if reservation.status != ReservationStatus.ACTIVE:
+            raise ConflictError(f"Reservation {reservation.id} is already {reservation.status}")
+        if not 0 <= picked <= reservation.quantity:
+            raise UnprocessableError(f"Between 0 and {reservation.quantity} units can be picked")
+        row = self.repo.get_row(reservation.product_id, reservation.bin_id)
+        if row is None:  # cannot happen while the database rules hold
+            raise ConflictError(f"Reservation {reservation.id} has no stock row")
+        before = _quantities(row)
+        movements = []
+        if picked:
+            movements.append(
+                self.change(
+                    row,
+                    MovementType.PICK,
+                    picked,
+                    on_hand=-picked,
+                    reserved=-picked,
+                    reference=reference,
+                    reason=reason,
+                    user=user,
+                )
+            )
+        not_picked = reservation.quantity - picked
+        if not_picked:
+            movements.append(
+                self.change(
+                    row,
+                    MovementType.RELEASE,
+                    not_picked,
+                    reserved=-not_picked,
+                    reference=(ReferenceType.RESERVATION, reservation.id),
+                    reason=f"{reason}: {not_picked} not picked",
+                    user=user,
+                )
+            )
+        reservation.status = ReservationStatus.FULFILLED if picked else ReservationStatus.RELEASED
+        reservation.closed_at = datetime.now(UTC)
+        self.audit.record(
+            "inventory.pick",
+            AUDIT_ENTITY,
+            row.id,
+            summary=(
+                f"Picked {picked} of {reservation.quantity} x {row.product.sku} from "
+                f"{row.bin.location_code}{_for_reference(reference)}"
+            ),
+            changes=_diff(before, row),
+            actor=user,
+        )
+        return movements
+
     def _allocate(self, product: Product, quantity: int) -> list[tuple[Inventory, int]]:
         """Split `quantity` over the best bins; refuse if there is not enough in total."""
         plan = self._plan(product, quantity)

@@ -70,18 +70,28 @@ class CycleCountService:
     # ----------------------------------------------------------------- start
     def start(self, data: CycleCountStart, *, user: User | None) -> CycleCount:
         bin_ = self.inventory.get_bin(data.bin_id, allow_archived=True)
-        unfinished = self.db.scalar(
-            select(CycleCount.id).where(
-                CycleCount.bin_id == bin_.id, CycleCount.status.in_(UNFINISHED)
-            )
-        )
+        unfinished = self.unfinished_for_bin(bin_.id)
         if unfinished is not None:
             raise ConflictError(f"Bin {bin_.location_code} is already being counted ({unfinished})")
+        count = self.open_count(bin_.id, note=data.note, user=user)
+        self.db.commit()
+        return count
+
+    def unfinished_for_bin(self, bin_id: int) -> int | None:
+        return self.db.scalar(
+            select(CycleCount.id).where(
+                CycleCount.bin_id == bin_id, CycleCount.status.in_(UNFINISHED)
+            )
+        )
+
+    def open_count(self, bin_id: int, *, note: str | None, user: User | None) -> CycleCount:
+        """Open a count for a bin without committing (e.g. after a short pick)."""
+        bin_ = self.inventory.get_bin(bin_id, allow_archived=True)
 
         count = CycleCount(
             bin_id=bin_.id,
             status=CycleCountStatus.OPEN,
-            note=data.note,
+            note=note,
             requested_by_id=user.id if user else None,
         )
         count.lines = [
@@ -91,7 +101,6 @@ class CycleCountService:
         self.db.add(count)
         self.db.flush()
         self._audit(count, "start", user, f"Started counting {bin_.location_code}")
-        self.db.commit()
         return count
 
     # ---------------------------------------------------------------- record

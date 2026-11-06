@@ -36,6 +36,7 @@ from app.core.config import INSECURE_SECRET_ALLOWED_ENVS, get_settings  # noqa: 
 from app.database.session import SessionLocal  # noqa: E402
 from app.models.audit import Alert  # noqa: E402
 from app.models.catalog import Category, Product, Supplier, SupplierProduct  # noqa: E402
+from app.models.fulfillment import PickingTask  # noqa: E402
 from app.models.inventory import (  # noqa: E402
     AdjustmentKind,
     CycleCount,
@@ -46,6 +47,7 @@ from app.models.inventory import (  # noqa: E402
     StockReservation,
     StockTransfer,
 )
+from app.models.order import Customer, Order, OrderItem, OrderStatusHistory  # noqa: E402
 from app.models.user import RoleName, User  # noqa: E402
 from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone  # noqa: E402
 from app.schemas.catalog import (  # noqa: E402
@@ -491,7 +493,7 @@ def _seed_pending_request(db: Session, report: SeedReport) -> None:
 
 # ----------------------------------------------------------------------------- reset
 def reset(db: Session) -> None:
-    """Delete stock, catalog, warehouse layout and the demo users. Other users are kept.
+    """Delete orders, stock, catalog, layout and the demo users. Other users are kept.
 
     Movements are append-only (database triggers). For this development-only reset the
     triggers are dropped, the history deleted, and the triggers created again.
@@ -499,6 +501,9 @@ def reset(db: Session) -> None:
     settings = get_settings()
     if settings.app_env not in INSECURE_SECRET_ALLOWED_ENVS:
         raise SeedError(f"--reset is only allowed in development/test (APP_ENV={settings.app_env})")
+    # Orders and their picking first: they point to stock reservations and products.
+    for model in (PickingTask, OrderStatusHistory, OrderItem, Order, Customer):
+        db.execute(delete(model))
     for model in (
         Alert,
         CycleCountLine,

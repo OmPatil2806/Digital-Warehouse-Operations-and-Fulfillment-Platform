@@ -24,7 +24,7 @@ INVENTORY_TABLES = {
     "cycle_count_lines",
 }
 AUDIT_TABLES = {"audit_logs", "alerts"}
-ORDER_TABLES = {"customers", "orders", "order_items", "order_status_history"}
+ORDER_TABLES = {"customers", "orders", "order_items", "order_status_history", "picking_tasks"}
 ALL_TABLES = (
     AUTH_TABLES | CATALOG_TABLES | WAREHOUSE_TABLES | INVENTORY_TABLES | AUDIT_TABLES | ORDER_TABLES
 )

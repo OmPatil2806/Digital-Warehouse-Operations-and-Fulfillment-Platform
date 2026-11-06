@@ -237,6 +237,9 @@ class OrderService:
         order.status_before_hold = None
         for item in order.items:
             item.quantity_reserved = 0
+        from app.services.fulfillment_service import FulfillmentService  # import cycle
+
+        FulfillmentService(self.db).cancel_open_tasks(order)
         # Commits the order change together with the released stock (one transaction).
         InventoryService(self.db).release_for_reference(
             ReferenceType.ORDER, order.id, user=user, reason=f"Order {order.order_number} cancelled"

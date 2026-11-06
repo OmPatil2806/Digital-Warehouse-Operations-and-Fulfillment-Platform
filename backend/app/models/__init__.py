@@ -6,6 +6,7 @@ Every model module must be imported here so that `Base.metadata` knows all table
 
 from app.models.audit import Alert, AlertSeverity, AlertStatus, AlertType, AuditAction, AuditLog
 from app.models.catalog import Category, Product, Supplier, SupplierProduct
+from app.models.fulfillment import PickingTask, PickingTaskStatus
 from app.models.inventory import (
     AdjustmentKind,
     CycleCount,
@@ -58,6 +59,8 @@ __all__ = [
     "OrderPriority",
     "OrderStatus",
     "OrderStatusHistory",
+    "PickingTask",
+    "PickingTaskStatus",
     "Product",
     "Rack",
     "ReferenceType",

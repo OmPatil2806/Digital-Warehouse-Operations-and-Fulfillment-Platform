@@ -268,3 +268,29 @@ def test_reset_removes_stock_but_keeps_movements_protected(
     with pytest.raises(IntegrityError, match="immutable"):
         db_session.execute(text("DELETE FROM inventory_movements"))
     db_session.rollback()
+
+
+def test_reset_also_removes_orders_and_picking(script: ModuleType, db_session: Session) -> None:
+    from app.models.fulfillment import PickingTask
+    from app.models.order import Order
+    from app.schemas.order import OrderCreate
+    from app.services.fulfillment_service import FulfillmentService
+    from app.services.order_service import OrderService
+    from tests.factories import create_customer
+
+    script.seed(db_session)
+    customer = create_customer(db_session)
+    product = db_session.scalars(select(Product).where(Product.sku == "LAP-1401")).one()
+    orders = OrderService(db_session)
+    order = orders.create(
+        OrderCreate(customer_id=customer.id, items=[{"product_id": product.id, "quantity": 2}]),
+        user=None,
+    )
+    orders.confirm(order.id, user=None)
+    FulfillmentService(db_session).allocate(order.id, user=None)
+
+    script.reset(db_session)
+
+    assert count(db_session, Order) == 0
+    assert count(db_session, PickingTask) == 0
+    assert count(db_session, Product) == 0

@@ -9,6 +9,7 @@ from app.api.v1 import (
     categories,
     customers,
     cycle_counts,
+    dashboards,
     fulfillment,
     health,
     inventory,
@@ -40,3 +41,4 @@ api_router.include_router(fulfillment.router)
 api_router.include_router(shipments.router)
 api_router.include_router(returns.router)
 api_router.include_router(purchase_orders.router)
+api_router.include_router(dashboards.router)

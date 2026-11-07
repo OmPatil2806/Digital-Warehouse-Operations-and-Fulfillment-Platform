@@ -170,7 +170,9 @@ def test_inventory_limit_and_hidden_money(db_session: Session, world: None) -> N
     assert result.turnover == Decimal("0.85")  # ratios are not money
 
 
-def test_period_after_the_last_movement_ends_with_current_stock(db_session: Session, world: None) -> None:
+def test_period_after_the_last_movement_ends_with_current_stock(
+    db_session: Session, world: None
+) -> None:
     """Nothing moved after the period: its end stock is the current stock."""
     period = DateRange(date(2026, 11, 3), date(2026, 11, 9))
     result = DashboardService(db_session).inventory(period, include_financials=True)

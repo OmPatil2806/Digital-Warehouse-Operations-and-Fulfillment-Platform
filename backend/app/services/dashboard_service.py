@@ -6,8 +6,8 @@ rest of the application:
 - *Stock* KPIs (inventory, open orders, shipments on the way, alerts, open purchase
   orders) describe the warehouse **now**.
 - *Period* KPIs (orders placed, shipped, delivered; units picked, turnover, days of
-  supply) count events inside the chosen date range. Both days are included; days are
-  UTC days.
+  supply; fulfillment and cycle times, on-time delivery, picking accuracy) count
+  events inside the chosen date range. Both days are included; days are UTC days.
 
 Sums of money are calculated per product in Python from exact `Decimal` prices, never
 with floating point.
@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.exceptions import UnprocessableError
 from app.models.audit import Alert, AlertSeverity
 from app.models.catalog import Product
+from app.models.fulfillment import PickingTask, PickingTaskStatus
 from app.models.inventory import Inventory, InventoryMovement, MovementType
 from app.models.order import Order, OrderStatus
 from app.models.purchase import OPEN_PO_STATUSES, PurchaseOrder, PurchaseOrderItem
@@ -32,15 +34,21 @@ from app.models.warehouse import Bin
 from app.schemas.dashboard import (
     AlertsOverview,
     CategoryStock,
+    DurationKpi,
+    FulfillmentDashboard,
+    FulfillmentTotals,
     InventoryDashboard,
     InventoryOverview,
     InventoryTotals,
     OrdersOverview,
+    OrdersPerDay,
     OverviewDashboard,
     Period,
     ProductStockKpi,
     PurchasingOverview,
+    RateKpi,
     ShipmentsOverview,
+    StatusCount,
     StockStatusCounts,
 )
 from app.services.alert_service import UNRESOLVED
@@ -110,6 +118,10 @@ class DateRange:
     def end(self) -> datetime:
         """Exclusive: midnight after the last day."""
         return datetime.combine(self.date_to + timedelta(days=1), time.min, tzinfo=UTC)
+
+    def contains(self, column: Any) -> tuple[Any, Any]:
+        """WHERE conditions: the timestamp column lies inside the period."""
+        return column >= self.start, column < self.end
 
     def period(self) -> Period:
         return Period(date_from=self.date_from, date_to=self.date_to, days=self.days)
@@ -323,6 +335,84 @@ class DashboardService:
             pid: stock.get(pid, EMPTY_STOCK).on_hand - int(later.get(pid) or 0) for pid in products
         }
 
+    # ------------------------------------------------------------ fulfillment
+    def fulfillment(self, period: DateRange) -> FulfillmentDashboard:
+        """Throughput, speed and quality of order fulfillment in the period.
+
+        Days are UTC days of the order milestones (created, shipped, delivered,
+        cancelled). Durations are measured in hours between two milestones of the
+        same order, counted in the period of the later one.
+        """
+        placed = self.db.scalars(select(Order.created_at).where(*period.contains(Order.created_at)))
+        shipped = self.db.execute(
+            select(Order.shipped_at, Order.confirmed_at).where(*period.contains(Order.shipped_at))
+        ).all()
+        delivered = self.db.execute(
+            select(Order.delivered_at, Order.created_at).where(*period.contains(Order.delivered_at))
+        ).all()
+        cancelled = (
+            self.db.scalar(select(func.count(Order.id)).where(*period.contains(Order.cancelled_at)))
+            or 0
+        )
+
+        days = {
+            period.date_from
+            + timedelta(days=i): OrdersPerDay(
+                day=period.date_from + timedelta(days=i), placed=0, shipped=0, delivered=0
+            )
+            for i in range(period.days)
+        }
+        placed_count = 0
+        for created in placed:
+            days[created.date()].placed += 1
+            placed_count += 1
+        for when, _ in shipped:
+            days[when.date()].shipped += 1
+        for when, _ in delivered:
+            days[when.date()].delivered += 1
+
+        deliveries = self.db.execute(
+            select(Shipment.delivered_at, Shipment.expected_delivery_date).where(
+                *period.contains(Shipment.delivered_at)
+            )
+        ).all()
+        on_time = sum(1 for when, expected in deliveries if when.date() <= expected)
+
+        picks = dict(
+            self.db.execute(
+                select(PickingTask.status, func.count(PickingTask.id))
+                .where(*period.contains(PickingTask.completed_at))
+                .group_by(PickingTask.status)
+            ).all()
+        )
+        # Only finished picks count: completed (all units) or short (fewer found).
+        complete = int(picks.get(PickingTaskStatus.COMPLETED.value, 0))
+        short = int(picks.get(PickingTaskStatus.SHORT.value, 0))
+
+        statuses = dict(
+            self.db.execute(select(Order.status, func.count(Order.id)).group_by(Order.status)).all()
+        )
+        return FulfillmentDashboard(
+            period=period.period(),
+            totals=FulfillmentTotals(
+                placed=placed_count,
+                shipped=len(shipped),
+                delivered=len(delivered),
+                cancelled=cancelled,
+            ),
+            per_day=list(days.values()),
+            fulfillment_time=duration_kpi(
+                end - start for end, start in shipped if start is not None
+            ),
+            cycle_time=duration_kpi(end - start for end, start in delivered),
+            on_time_delivery=rate_kpi(on_time, len(deliveries)),
+            picking_accuracy=rate_kpi(complete, complete + short),
+            by_status=[
+                StatusCount(status=status.value, count=int(statuses.get(status.value, 0)))
+                for status in OrderStatus
+            ],
+        )
+
     def orders_overview(self, period: DateRange, *, now: datetime) -> OrdersOverview:
         def count_orders(*conditions: object) -> int:
             return self.db.scalar(select(func.count(Order.id)).where(*conditions)) or 0
@@ -389,6 +479,25 @@ class DashboardService:
             overdue=sum(1 for po in open_pos if po.expected_date < today),
             open_value=_money(value),
         )
+
+
+def duration_kpi(durations: Iterable[timedelta]) -> DurationKpi:
+    """Average and median in hours (1 decimal) of the given durations."""
+    hours = sorted(Decimal(d.total_seconds()) / 3600 for d in durations)
+    if not hours:
+        return DurationKpi(orders=0, average_hours=None, median_hours=None)
+    middle = len(hours) // 2
+    median = hours[middle] if len(hours) % 2 else (hours[middle - 1] + hours[middle]) / 2
+    return DurationKpi(
+        orders=len(hours),
+        average_hours=_ratio(sum(hours, Decimal("0")) / len(hours), 1),
+        median_hours=_ratio(median, 1),
+    )
+
+
+def rate_kpi(good: int, total: int) -> RateKpi:
+    percent = _ratio(Decimal(100 * good) / total, 1) if total else None
+    return RateKpi(good=good, total=total, percent=percent)
 
 
 def stock_status(available: int, min_stock: int) -> str:

@@ -120,3 +120,54 @@ class InventoryDashboard(BaseModel):
     by_category: list[CategoryStock]
     products: list[ProductStockKpi]  # most urgent first (fewest days of supply)
     products_total: int
+
+
+# ======================================================================= fulfillment
+class OrdersPerDay(BaseModel):
+    day: date
+    placed: int
+    shipped: int
+    delivered: int
+
+
+class FulfillmentTotals(BaseModel):
+    placed: int
+    shipped: int
+    delivered: int
+    cancelled: int
+
+
+class DurationKpi(BaseModel):
+    """Average and median of a duration, over the orders it could be measured for."""
+
+    orders: int
+    average_hours: Decimal | None
+    median_hours: Decimal | None
+
+
+class RateKpi(BaseModel):
+    """`good` of `total`, as a percentage (None when there is nothing to measure)."""
+
+    good: int
+    total: int
+    percent: Decimal | None
+
+
+class StatusCount(BaseModel):
+    status: str
+    count: int
+
+
+class FulfillmentDashboard(BaseModel):
+    period: Period
+    totals: FulfillmentTotals
+    per_day: list[OrdersPerDay]  # every day of the period, also days without orders
+    # Confirmed -> shipped, for orders shipped in the period.
+    fulfillment_time: DurationKpi
+    # Placed -> delivered, for orders delivered in the period.
+    cycle_time: DurationKpi
+    # Shipments delivered in the period by their expected delivery date.
+    on_time_delivery: RateKpi
+    # Picking tasks finished in the period without a short pick.
+    picking_accuracy: RateKpi
+    by_status: list[StatusCount]  # all orders now, every status in flow order

@@ -1,9 +1,10 @@
 """Dashboard KPIs (project document, section 9.4).
 
-| Dashboard | Who                   | Money values        |
-|-----------|-----------------------|---------------------|
-| Overview  | admin, manager, staff | admin, manager only |
-| Inventory | admin, manager, staff | admin, manager only |
+| Dashboard   | Who                   | Money values        |
+|-------------|-----------------------|---------------------|
+| Overview    | admin, manager, staff | admin, manager only |
+| Inventory   | admin, manager, staff | admin, manager only |
+| Fulfillment | admin, manager, staff | (none)              |
 """
 
 from datetime import date
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import DbSession
 from app.api.v1.access import WarehouseReader, is_manager
-from app.schemas.dashboard import InventoryDashboard, OverviewDashboard
+from app.schemas.dashboard import FulfillmentDashboard, InventoryDashboard, OverviewDashboard
 from app.services.dashboard_service import DashboardService, DateRange
 
 router = APIRouter(
@@ -57,3 +58,17 @@ def inventory(
 ) -> InventoryDashboard:
     period = DateRange.resolve(date_from, date_to)
     return DashboardService(db).inventory(period, include_financials=is_manager(user), limit=limit)
+
+
+@router.get(
+    "/fulfillment",
+    response_model=FulfillmentDashboard,
+    summary="Orders per day, fulfillment speed, on-time delivery, picking accuracy",
+)
+def fulfillment(
+    db: DbSession,
+    _: WarehouseReader,
+    date_from: DateFrom = None,
+    date_to: DateTo = None,
+) -> FulfillmentDashboard:
+    return DashboardService(db).fulfillment(DateRange.resolve(date_from, date_to))

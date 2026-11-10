@@ -24,13 +24,18 @@ from sqlalchemy.orm import Session
 
 from app.exceptions import UnprocessableError
 from app.models.audit import Alert, AlertSeverity
-from app.models.catalog import Product
+from app.models.catalog import Product, Supplier
 from app.models.fulfillment import PickingTask, PickingTaskStatus
 from app.models.inventory import Inventory, InventoryMovement, MovementType
 from app.models.order import Order, OrderStatus
-from app.models.purchase import OPEN_PO_STATUSES, PurchaseOrder, PurchaseOrderItem
+from app.models.purchase import (
+    OPEN_PO_STATUSES,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    PurchaseOrderStatus,
+)
 from app.models.shipment import Shipment, ShipmentStatus
-from app.models.warehouse import Bin
+from app.models.warehouse import Bin, Rack, Shelf, Warehouse, Zone
 from app.schemas.dashboard import (
     AlertsOverview,
     CategoryStock,
@@ -48,8 +53,13 @@ from app.schemas.dashboard import (
     PurchasingOverview,
     RateKpi,
     ShipmentsOverview,
+    SpaceUse,
     StatusCount,
     StockStatusCounts,
+    SupplierDashboard,
+    SupplierKpi,
+    WarehouseDashboard,
+    ZoneUse,
 )
 from app.services.alert_service import UNRESOLVED
 
@@ -413,6 +423,162 @@ class DashboardService:
             ],
         )
 
+    # -------------------------------------------------------------- warehouse
+    def warehouse(self, period: DateRange) -> WarehouseDashboard:
+        """Bin occupancy and space use per zone (now), and picks per zone (period).
+
+        Capacity counts active bins only. The load of a bin is everything in it,
+        damaged units too (they take the same space), like the put-away fit check.
+        """
+        bins = self.db.execute(
+            select(Bin.id, Bin.is_active, Bin.max_weight_kg, Bin.max_volume_cm3, Zone.id)
+            .join(Shelf, Bin.shelf_id == Shelf.id)
+            .join(Rack, Shelf.rack_id == Rack.id)
+            .join(Zone, Rack.zone_id == Zone.id)
+        ).all()
+        zone_of = {bin_id: zone_id for bin_id, _, _, _, zone_id in bins}
+
+        load: dict[int, list[Decimal]] = {}  # bin -> [units, weight, volume]
+        for bin_id, units, product in self.db.execute(
+            select(Inventory.bin_id, Inventory.quantity_on_hand, Product)
+            .join(Product, Inventory.product_id == Product.id)
+            .where(Inventory.quantity_on_hand > 0)
+        ).all():
+            entry = load.setdefault(bin_id, [Decimal(0), Decimal(0), Decimal(0)])
+            entry[0] += units
+            entry[1] += product.weight_kg * units
+            entry[2] += product.volume_cm3 * units
+
+        picks: dict[int, list[int]] = {}  # zone -> [picks, units]
+        for bin_id, count, delta in self.db.execute(
+            select(
+                InventoryMovement.bin_id,
+                func.count(InventoryMovement.id),
+                func.sum(InventoryMovement.on_hand_delta),
+            )
+            .where(
+                InventoryMovement.movement_type == MovementType.PICK.value,
+                *period.contains(InventoryMovement.created_at),
+            )
+            .group_by(InventoryMovement.bin_id)
+        ).all():
+            entry = picks.setdefault(zone_of[bin_id], [0, 0])
+            entry[0] += int(count)
+            entry[1] -= int(delta)
+
+        space: dict[int, _Space] = {}
+        total = _Space()
+        for bin_id, is_active, max_weight, max_volume, zone_id in bins:
+            if not is_active:
+                continue
+            used = load.get(bin_id)
+            for target in (space.setdefault(zone_id, _Space()), total):
+                target.add(max_weight, max_volume, used)
+
+        zones = self.db.scalars(
+            select(Zone)
+            .join(Warehouse, Zone.warehouse_id == Warehouse.id)
+            .order_by(Warehouse.code, Zone.code)
+        ).all()
+        return WarehouseDashboard(
+            period=period.period(),
+            total=total.result(),
+            zones=[
+                ZoneUse(
+                    **space.get(zone.id, _Space()).result().model_dump(),
+                    zone_id=zone.id,
+                    warehouse=zone.warehouse.code,
+                    code=zone.code,
+                    name=zone.name,
+                    zone_type=zone.zone_type,
+                    is_active=zone.is_active,
+                    picks=picks.get(zone.id, [0, 0])[0],
+                    units_picked=picks.get(zone.id, [0, 0])[1],
+                )
+                for zone in zones
+            ],
+        )
+
+    # -------------------------------------------------------------- suppliers
+    def suppliers(
+        self, period: DateRange, *, include_financials: bool, today: date | None = None
+    ) -> SupplierDashboard:
+        """Lead times and on-time deliveries of purchase orders, per supplier.
+
+        Lead time = ordered -> fully received, for purchase orders fully received in
+        the period. On time = received on or before the expected date. Variance is the
+        population variance of those lead times.
+        """
+        today = today or datetime.now(UTC).date()
+        received = self.db.execute(
+            select(
+                PurchaseOrder.supplier_id,
+                PurchaseOrder.ordered_at,
+                PurchaseOrder.received_at,
+                PurchaseOrder.expected_date,
+            ).where(
+                PurchaseOrder.status == PurchaseOrderStatus.RECEIVED.value,
+                PurchaseOrder.ordered_at.is_not(None),
+                *period.contains(PurchaseOrder.received_at),
+            )
+        ).all()
+        open_pos = self.db.scalars(
+            select(PurchaseOrder).where(PurchaseOrder.status.in_(OPEN_PO_STATUSES))
+        ).all()
+        with_orders = set(self.db.scalars(select(PurchaseOrder.supplier_id).distinct()))
+        suppliers = [
+            supplier
+            for supplier in self.db.scalars(select(Supplier).order_by(Supplier.code))
+            if supplier.is_active or supplier.id in with_orders
+        ]
+
+        def summary(rows: list, pos: list[PurchaseOrder]) -> dict[str, object]:
+            days = [Decimal((got - ordered).total_seconds()) / 86400 for _, ordered, got, _ in rows]
+            on_time = sum(1 for _, _, got, expected in rows if got.date() <= expected)
+            mean = sum(days, Decimal(0)) / len(days) if days else None
+            variance = (
+                sum(((d - mean) ** 2 for d in days), Decimal(0)) / len(days)
+                if mean is not None
+                else None
+            )
+            value = sum(
+                (i.unit_cost * i.quantity_outstanding for po in pos for i in po.items),
+                Decimal(0),
+            )
+            return {
+                "received_orders": len(rows),
+                "lead_time_avg_days": _ratio(mean, 1) if mean is not None else None,
+                "lead_time_variance": _ratio(variance, 2) if variance is not None else None,
+                "lead_time_stddev_days": (
+                    _ratio(variance.sqrt(), 1) if variance is not None else None
+                ),
+                "on_time": rate_kpi(on_time, len(rows)),
+                "open_orders": len(pos),
+                "overdue_orders": sum(1 for po in pos if po.expected_date < today),
+                "open_value": _money(value) if include_financials else None,
+            }
+
+        return SupplierDashboard(
+            period=period.period(),
+            include_financials=include_financials,
+            **summary(list(received), list(open_pos)),
+            suppliers=[
+                SupplierKpi(
+                    supplier_id=supplier.id,
+                    code=supplier.code,
+                    name=supplier.name,
+                    is_active=supplier.is_active,
+                    promised_lead_time_days=supplier.lead_time_days,
+                    reliability_score=supplier.reliability_score,
+                    **summary(
+                        [r for r in received if r[0] == supplier.id],
+                        [po for po in open_pos if po.supplier_id == supplier.id],
+                    ),
+                )
+                for supplier in suppliers
+            ],
+        )
+
     def orders_overview(self, period: DateRange, *, now: datetime) -> OrdersOverview:
         def count_orders(*conditions: object) -> int:
             return self.db.scalar(select(func.count(Order.id)).where(*conditions)) or 0
@@ -478,6 +644,43 @@ class DashboardService:
             open=len(open_pos),
             overdue=sum(1 for po in open_pos if po.expected_date < today),
             open_value=_money(value),
+        )
+
+
+@dataclass
+class _Space:
+    """Running totals of bin capacity and use (for a zone or the whole warehouse)."""
+
+    bins: int = 0
+    occupied: int = 0
+    max_weight: Decimal = Decimal(0)
+    used_weight: Decimal = Decimal(0)
+    max_volume: int = 0
+    used_volume: Decimal = Decimal(0)
+
+    def add(self, max_weight: Decimal, max_volume: int, used: list[Decimal] | None) -> None:
+        self.bins += 1
+        self.max_weight += max_weight
+        self.max_volume += max_volume
+        if used:
+            self.occupied += 1
+            self.used_weight += used[1]
+            self.used_volume += used[2]
+
+    def result(self) -> SpaceUse:
+        def percent(part: Decimal | int, whole: Decimal | int) -> Decimal | None:
+            return _ratio(Decimal(100) * part / whole, 1) if whole else None
+
+        return SpaceUse(
+            bins=self.bins,
+            occupied_bins=self.occupied,
+            occupancy_percent=percent(self.occupied, self.bins),
+            max_weight_kg=self.max_weight.quantize(Decimal("0.001")),
+            used_weight_kg=self.used_weight.quantize(Decimal("0.001")),
+            weight_percent=percent(self.used_weight, self.max_weight),
+            max_volume_cm3=self.max_volume,
+            used_volume_cm3=self.used_volume.quantize(Decimal("1")),
+            volume_percent=percent(self.used_volume, self.max_volume),
         )
 
 

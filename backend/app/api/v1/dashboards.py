@@ -5,6 +5,8 @@
 | Overview    | admin, manager, staff | admin, manager only |
 | Inventory   | admin, manager, staff | admin, manager only |
 | Fulfillment | admin, manager, staff | (none)              |
+| Warehouse   | admin, manager, staff | (none)              |
+| Suppliers   | admin, manager, staff | admin, manager only |
 """
 
 from datetime import date
@@ -14,7 +16,13 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import DbSession
 from app.api.v1.access import WarehouseReader, is_manager
-from app.schemas.dashboard import FulfillmentDashboard, InventoryDashboard, OverviewDashboard
+from app.schemas.dashboard import (
+    FulfillmentDashboard,
+    InventoryDashboard,
+    OverviewDashboard,
+    SupplierDashboard,
+    WarehouseDashboard,
+)
 from app.services.dashboard_service import DashboardService, DateRange
 
 router = APIRouter(
@@ -72,3 +80,33 @@ def fulfillment(
     date_to: DateTo = None,
 ) -> FulfillmentDashboard:
     return DashboardService(db).fulfillment(DateRange.resolve(date_from, date_to))
+
+
+@router.get(
+    "/warehouse",
+    response_model=WarehouseDashboard,
+    summary="Bin occupancy, space use and picks per zone",
+)
+def warehouse(
+    db: DbSession,
+    _: WarehouseReader,
+    date_from: DateFrom = None,
+    date_to: DateTo = None,
+) -> WarehouseDashboard:
+    return DashboardService(db).warehouse(DateRange.resolve(date_from, date_to))
+
+
+@router.get(
+    "/suppliers",
+    response_model=SupplierDashboard,
+    summary="Supplier lead times, their variance and on-time delivery",
+)
+def suppliers(
+    db: DbSession,
+    user: WarehouseReader,
+    date_from: DateFrom = None,
+    date_to: DateTo = None,
+) -> SupplierDashboard:
+    return DashboardService(db).suppliers(
+        DateRange.resolve(date_from, date_to), include_financials=is_manager(user)
+    )

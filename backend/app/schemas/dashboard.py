@@ -171,3 +171,67 @@ class FulfillmentDashboard(BaseModel):
     # Picking tasks finished in the period without a short pick.
     picking_accuracy: RateKpi
     by_status: list[StatusCount]  # all orders now, every status in flow order
+
+
+# ========================================================================= warehouse
+class SpaceUse(BaseModel):
+    """Bins and capacity of active bins, and how much of it is used now."""
+
+    bins: int
+    occupied_bins: int  # holding at least one unit
+    occupancy_percent: Decimal | None
+    max_weight_kg: Decimal
+    used_weight_kg: Decimal
+    weight_percent: Decimal | None
+    max_volume_cm3: int
+    used_volume_cm3: Decimal
+    volume_percent: Decimal | None
+
+
+class ZoneUse(SpaceUse):
+    zone_id: int
+    warehouse: str
+    code: str
+    name: str
+    zone_type: str
+    is_active: bool
+    picks: int  # pick movements from its bins in the period
+    units_picked: int
+
+
+class WarehouseDashboard(BaseModel):
+    period: Period  # for the picks; space use is the state now
+    total: SpaceUse
+    zones: list[ZoneUse]  # by warehouse and zone code
+
+
+# ========================================================================= suppliers
+class SupplierKpi(BaseModel):
+    supplier_id: int
+    code: str
+    name: str
+    is_active: bool
+    promised_lead_time_days: int  # the supplier's stated lead time
+    reliability_score: Decimal  # stored rating (0-1); Phase 8 learns a better one
+    received_orders: int  # purchase orders fully received in the period
+    lead_time_avg_days: Decimal | None  # ordered -> fully received
+    lead_time_variance: Decimal | None  # population variance, in days²
+    lead_time_stddev_days: Decimal | None
+    on_time: RateKpi  # fully received by the expected date
+    open_orders: int
+    overdue_orders: int
+    open_value: Decimal | None  # value still outstanding (managers only)
+
+
+class SupplierDashboard(BaseModel):
+    period: Period
+    include_financials: bool
+    received_orders: int
+    lead_time_avg_days: Decimal | None
+    lead_time_variance: Decimal | None
+    lead_time_stddev_days: Decimal | None
+    on_time: RateKpi
+    open_orders: int
+    overdue_orders: int
+    open_value: Decimal | None
+    suppliers: list[SupplierKpi]  # active suppliers and any with purchase orders

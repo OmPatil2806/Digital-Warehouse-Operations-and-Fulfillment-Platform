@@ -121,7 +121,9 @@ describe('DashboardPage for managers', () => {
     expect(within(stock).getByRole('row', { name: 'Below minimum 5' })).toBeInTheDocument()
 
     const urgent = within(screen.getByRole('table', { name: /fewest days of supply/ }))
-    expect(urgent.getByRole('row', { name: /TOO-LAD1.*Out of stock 0 0 days/ })).toBeInTheDocument()
+    expect(
+      urgent.getByRole('row', { name: /TOO-LAD1 .* Out of stock 0 0 days/ }),
+    ).toBeInTheDocument()
     expect(
       urgent.getByRole('row', { name: /ACC-HDS1.*Below minimum 6 no demand/ }),
     ).toBeInTheDocument()

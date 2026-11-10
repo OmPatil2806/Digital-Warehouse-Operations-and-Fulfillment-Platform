@@ -10,7 +10,8 @@ import { apiClient } from './apiClient'
 
 export const dashboardKeys = {
   all: ['dashboards'] as const,
-  view: (name: string, range: DateRangeParams) => ['dashboards', name, range] as const,
+  view: (name: string, params: DateRangeParams & { limit?: number }) =>
+    ['dashboards', name, params] as const,
 }
 
 /** Empty dates are left out, so the API uses its default (the last 30 days). */

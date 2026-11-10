@@ -252,11 +252,12 @@ function RunningOut({
                   <span className="font-mono text-xs">{p.sku}</span>{' '}
                   <span className="text-slate-600">{p.name}</span>
                   {p.status !== 'ok' && (
-                    <span className="ml-2">
+                    <>
+                      {' '}
                       <Badge tone={p.status === 'out' ? 'danger' : 'warning'}>
                         {STOCK_STATUS[p.status].label}
                       </Badge>
-                    </span>
+                    </>
                   )}
                 </th>
                 <td className="py-1.5 text-right">{formatInteger(p.units_available)}</td>

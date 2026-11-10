@@ -58,6 +58,7 @@ describe('Sidebar', () => {
         'Fulfillment',
         'Shipments',
         'Alerts',
+        'Reports',
         'ML insights',
         'Users',
         'Audit log',
@@ -77,6 +78,7 @@ describe('Sidebar', () => {
         'Fulfillment',
         'Shipments',
         'Alerts',
+        'Reports',
         'ML insights',
       ],
     ],
@@ -92,6 +94,7 @@ describe('Sidebar', () => {
         'Fulfillment',
         'Shipments',
         'Alerts',
+        'Reports',
       ],
     ],
     ['customer', ['Dashboard', 'Orders', 'Shipments']],
@@ -114,6 +117,7 @@ describe('Sidebar', () => {
       'Fulfillment',
       'Shipments',
       'Alerts',
+      'Reports',
     ])
   })
 
@@ -140,6 +144,7 @@ describe('Sidebar', () => {
       ['Fulfillment', '/fulfillment'],
       ['Shipments', '/shipments'],
       ['Alerts', '/alerts'],
+      ['Reports', '/reports'],
     ])
 
     const insights = within(nav).getByText('ML insights').closest('[aria-disabled="true"]')

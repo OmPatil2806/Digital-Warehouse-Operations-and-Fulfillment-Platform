@@ -1,4 +1,5 @@
 import {
+  BarChart3,
   Bell,
   Boxes,
   BrainCircuit,
@@ -126,6 +127,14 @@ export const NAV_SECTIONS: NavSection[] = [
         availableInPhase: 4,
         ready: true,
         badge: 'unresolved-alerts',
+      },
+      {
+        label: 'Reports',
+        to: '/reports',
+        icon: BarChart3,
+        roles: ['manager', 'staff'],
+        availableInPhase: 6,
+        ready: true,
       },
       {
         label: 'ML insights',

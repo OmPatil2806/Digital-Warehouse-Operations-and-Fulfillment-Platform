@@ -2,6 +2,10 @@ import type {
   FulfillmentDashboard,
   InventoryDashboard,
   OverviewDashboard,
+  SpaceUse,
+  SupplierDashboard,
+  SupplierKpi,
+  WarehouseDashboard,
 } from '../types/dashboard'
 
 const PERIOD = { date_from: '2026-10-12', date_to: '2026-11-10', days: 30 }
@@ -50,7 +54,11 @@ export function makeFulfillment(
     cycle_time: { orders: 1, average_hours: '98.0', median_hours: '98.0' },
     on_time_delivery: { good: 3, total: 4, percent: '75.0' },
     picking_accuracy: { good: 5, total: 5, percent: '100.0' },
-    by_status: [{ status: 'created', count: 1 }],
+    by_status: [
+      { status: 'created', count: 1 },
+      { status: 'confirmed', count: 0 },
+      { status: 'shipped', count: 2 },
+    ],
     ...overrides,
   }
 }
@@ -71,7 +79,24 @@ export function makeInventory(overrides: Partial<InventoryDashboard> = {}): Inve
     turnover: '0.01',
     days_of_supply: '1520.5',
     stock_status: { ok: 44, low: 5, out: 1 },
-    by_category: [],
+    by_category: [
+      {
+        category_id: 1,
+        category: 'Laptops',
+        products: 4,
+        units_on_hand: 20,
+        value_at_cost: '28960.00',
+        value_at_price: '38000.00',
+      },
+      {
+        category_id: 2,
+        category: 'Tools',
+        products: 6,
+        units_on_hand: 90,
+        value_at_cost: '2790.00',
+        value_at_price: '5310.00',
+      },
+    ],
     products: [
       {
         product_id: 9,
@@ -120,6 +145,101 @@ export function makeInventory(overrides: Partial<InventoryDashboard> = {}): Inve
       },
     ],
     products_total: 50,
+    ...overrides,
+  }
+}
+
+function space(overrides: Partial<SpaceUse> = {}): SpaceUse {
+  return {
+    bins: 192,
+    occupied_bins: 50,
+    occupancy_percent: '26.0',
+    max_weight_kg: '19200.000',
+    used_weight_kg: '2860.800',
+    weight_percent: '14.9',
+    max_volume_cm3: 38_400_000,
+    used_volume_cm3: '5337600',
+    volume_percent: '13.9',
+    ...overrides,
+  }
+}
+
+export function makeWarehouse(overrides: Partial<WarehouseDashboard> = {}): WarehouseDashboard {
+  const zone = (id: number, code: string, name: string, zone_type: string, extra = {}) => ({
+    ...space(),
+    zone_id: id,
+    warehouse: 'WH01',
+    code,
+    name,
+    zone_type,
+    is_active: true,
+    picks: 0,
+    units_picked: 0,
+    ...extra,
+  })
+  return {
+    period: PERIOD,
+    total: space({ bins: 274, occupied_bins: 84, occupancy_percent: '30.7' }),
+    zones: [
+      zone(1, 'ZA', 'Picking', 'picking', { picks: 4, units_picked: 10 }),
+      zone(2, 'ZC', 'Cold storage', 'cold', { occupancy_percent: '62.5', weight_percent: '52.1' }),
+      zone(3, 'ZX', 'Empty zone', 'bulk', {
+        ...space({ bins: 0, occupied_bins: 0, occupancy_percent: null, weight_percent: null }),
+      }),
+    ],
+    ...overrides,
+  }
+}
+
+function supplier(overrides: Partial<SupplierKpi> = {}): SupplierKpi {
+  return {
+    supplier_id: 1,
+    code: 'SUP-001',
+    name: 'Nordtech Distribution GmbH',
+    is_active: true,
+    promised_lead_time_days: 5,
+    reliability_score: '0.97',
+    received_orders: 2,
+    lead_time_avg_days: '7.8',
+    lead_time_variance: '7.56',
+    lead_time_stddev_days: '2.8',
+    on_time: { good: 1, total: 2, percent: '50.0' },
+    open_orders: 0,
+    overdue_orders: 0,
+    open_value: '0.00',
+    ...overrides,
+  }
+}
+
+export function makeSuppliers(overrides: Partial<SupplierDashboard> = {}): SupplierDashboard {
+  return {
+    period: PERIOD,
+    include_financials: true,
+    received_orders: 2,
+    lead_time_avg_days: '7.8',
+    lead_time_variance: '7.56',
+    lead_time_stddev_days: '2.8',
+    on_time: { good: 1, total: 2, percent: '50.0' },
+    open_orders: 2,
+    overdue_orders: 1,
+    open_value: '1812.00',
+    suppliers: [
+      supplier(),
+      supplier({
+        supplier_id: 4,
+        code: 'SUP-004',
+        name: 'AutoParts Europa SpA',
+        promised_lead_time_days: 9,
+        received_orders: 0,
+        lead_time_avg_days: null,
+        lead_time_variance: null,
+        lead_time_stddev_days: null,
+        on_time: { good: 0, total: 0, percent: null },
+        open_orders: 1,
+        overdue_orders: 1,
+        open_value: '1440.00',
+      }),
+    ],
     ...overrides,
   }
 }

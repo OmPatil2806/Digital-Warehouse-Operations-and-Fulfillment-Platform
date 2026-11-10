@@ -62,3 +62,8 @@ const shortDate = new Intl.DateTimeFormat('en-GB', {
 export function formatShortDate(day: string): string {
   return shortDate.format(new Date(`${day}T00:00:00Z`))
 }
+
+/** "1 product", "2 products"; pass the plural when it is not word + "s". */
+export function plural(count: number | null | undefined, word: string, many = `${word}s`): string {
+  return `${formatInteger(count)} ${count === 1 ? word : many}`
+}

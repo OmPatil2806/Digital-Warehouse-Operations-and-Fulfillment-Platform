@@ -1,11 +1,24 @@
+import { lazy, Suspense } from 'react'
+
 import { getHealth } from '../api/healthApi'
 import { HealthStatusCard, type HealthState } from '../components/common/HealthStatusCard'
 import { isReady, NAV_SECTIONS } from '../components/layout/navigation'
+import { isOrderManager, isWarehouseRole } from '../components/orders/orderFormat'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
 import { hasAnyRole } from '../utils/roles'
 
-/** Home page after login. Phase 2: greeting, the user's modules and system status. */
+// The dashboards (and the chart library) load on first use, so the login page stays small.
+const overviews = () => import('../components/dashboard/RoleOverviews')
+const ManagerOverview = lazy(() => overviews().then((m) => ({ default: m.ManagerOverview })))
+const StaffOverview = lazy(() => overviews().then((m) => ({ default: m.StaffOverview })))
+const CustomerOverview = lazy(() => overviews().then((m) => ({ default: m.CustomerOverview })))
+
+/**
+ * Home page after login: a dashboard for the user's role (managers: KPIs and trends for
+ * a period; staff: today's work; customers: their orders and parcels), then the
+ * user's modules and the system status.
+ */
 export default function DashboardPage() {
   const { user } = useAuth()
   const healthQuery = useApiQuery(['health'], getHealth)
@@ -20,12 +33,24 @@ export default function DashboardPage() {
     (item) => item.to !== '/' && (!item.roles || hasAnyRole(user, item.roles)),
   )
 
+  const manager = isOrderManager(user)
+  const staff = !manager && isWarehouseRole(user)
+  const intro = manager
+    ? 'How the warehouse is doing: stock, orders, deliveries and suppliers.'
+    : staff
+      ? "Today's work on the floor."
+      : 'Your recent orders and parcels.'
+
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-6xl">
       <h1 className="text-2xl font-semibold">Welcome, {user?.full_name}</h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Here is an overview of the platform and the modules available to you.
-      </p>
+      <p className="mt-1 text-sm text-slate-500">{intro}</p>
+
+      <div className="mt-6">
+        <Suspense fallback={<p className="text-sm text-slate-500">Loading the dashboard…</p>}>
+          {manager ? <ManagerOverview /> : staff ? <StaffOverview /> : <CustomerOverview />}
+        </Suspense>
+      </div>
 
       <div className="mt-8 grid gap-6 md:grid-cols-2">
         <section

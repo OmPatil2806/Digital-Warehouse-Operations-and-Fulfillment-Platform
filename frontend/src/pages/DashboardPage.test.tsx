@@ -10,6 +10,18 @@ import DashboardPage from './DashboardPage'
 
 // Replace the real API call with a mock, so tests never need a running backend.
 vi.mock('../api/healthApi', () => ({ getHealth: vi.fn() }))
+// The role dashboards are tested in DashboardPage.roles.test.tsx; here they stay loading.
+const { pending } = vi.hoisted(() => ({ pending: () => new Promise(() => {}) }))
+vi.mock('../api/dashboardApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/dashboardApi')>()),
+  getOverviewDashboard: pending,
+  getFulfillmentDashboard: pending,
+  getInventoryDashboard: pending,
+}))
+vi.mock('../api/alertsApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/alertsApi')>()),
+  listAlerts: pending,
+}))
 
 const auth = makeAuth({
   status: 'authenticated',

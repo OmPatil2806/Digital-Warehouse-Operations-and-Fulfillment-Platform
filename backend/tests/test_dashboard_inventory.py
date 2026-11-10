@@ -22,7 +22,12 @@ from sqlalchemy.orm import Session
 
 from app.models.inventory import Inventory, InventoryMovement
 from app.models.user import RoleName
-from app.services.dashboard_service import DashboardService, DateRange, stock_status
+from app.services.dashboard_service import (
+    DashboardService,
+    DateRange,
+    days_of_supply,
+    stock_status,
+)
 from tests.factories import auth_headers, create_bin, create_category, create_product, create_user
 
 API = "/api/v1/dashboards/inventory"
@@ -134,8 +139,8 @@ def test_inventory_kpis(db_session: Session, world: None) -> None:
     ]
 
     assert result.products_total == 3
-    z1, p2, p3 = result.products  # fewest days of supply first, then no demand by SKU
-    assert (z1.sku, p2.sku, p3.sku) == ("Z1", "P2", "P3")
+    p3, z1, p2 = result.products  # empty first, then fewest days of supply, then no demand
+    assert (p3.sku, z1.sku, p2.sku) == ("P3", "Z1", "P2")
     assert z1.model_dump(exclude={"product_id", "name"}) == {
         "sku": "Z1",
         "category": "Kitchen",
@@ -155,13 +160,14 @@ def test_inventory_kpis(db_session: Session, world: None) -> None:
         None,  # no demand: lasts "forever"
         Decimal("0.00"),
     )
-    assert (p3.status, p3.turnover, p3.days_of_supply) == ("out", None, None)  # no stock at all
+    # Nothing available lasts 0 days, even without demand
+    assert (p3.status, p3.turnover, p3.days_of_supply) == ("out", None, Decimal("0.0"))
 
 
 def test_inventory_limit_and_hidden_money(db_session: Session, world: None) -> None:
     result = DashboardService(db_session).inventory(PERIOD, include_financials=False, limit=1)
 
-    assert [p.sku for p in result.products] == ["Z1"]
+    assert [p.sku for p in result.products] == ["P3"]
     assert result.products_total == 3
     assert result.totals.value_at_cost is None
     assert result.totals.value_at_price is None
@@ -217,3 +223,38 @@ def test_api_inventory_by_role(client: TestClient, db_session: Session, world: N
     assert len(hidden["products"]) == 2
     assert client.get(API, headers=auth_headers(customer)).status_code == 403
     assert client.get(API, params={"limit": 0}, headers=auth_headers(manager)).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("available", "daily", "expected"),
+    [
+        (0, Decimal("2"), Decimal("0.0")),
+        (0, Decimal("0"), Decimal("0.0")),  # empty, no demand: still 0 days
+        (5, Decimal("0"), None),  # stock without demand has no end
+        (5, Decimal("2"), Decimal("2.5")),
+        (1, Decimal("3"), Decimal("0.3")),
+    ],
+)
+def test_days_of_supply(available: int, daily: Decimal, expected: Decimal | None) -> None:
+    assert days_of_supply(available, daily) == expected
+
+
+def test_products_without_demand_list_low_stock_before_healthy_stock(
+    db_session: Session,
+) -> None:
+    category = create_category(db_session)
+    for sku, min_stock in [("A-OK", 1), ("B-LOW", 50)]:
+        product = create_product(db_session, category, sku=sku, min_stock=min_stock)
+        db_session.add(
+            Inventory(
+                product_id=product.id,
+                bin_id=create_bin(db_session, f"WH01-ZA-R01-S01-{sku[0]}01").id,
+                quantity_on_hand=10,
+                quantity_reserved=0,
+                quantity_damaged=0,
+            )
+        )
+    db_session.commit()
+
+    result = DashboardService(db_session).inventory(PERIOD, include_financials=True)
+    assert [(p.sku, p.status) for p in result.products] == [("B-LOW", "low"), ("A-OK", "ok")]

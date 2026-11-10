@@ -279,14 +279,23 @@ class DashboardService:
                     units_available=row.available,
                     units_picked=units_picked,
                     avg_daily_demand=_ratio(daily),
-                    days_of_supply=_ratio(row.available / daily, 1) if daily else None,
+                    days_of_supply=days_of_supply(row.available, daily),
                     turnover=_ratio(units_picked / average) if average else None,
                     value_at_cost=_money(cost),
                 )
             )
 
         # Most urgent first: fewest days of supply, then products without demand.
-        product_rows.sort(key=lambda p: (p.days_of_supply is None, p.days_of_supply or 0, p.sku))
+        # Empty first (0 days), then fewest days of supply; without demand last, low
+        # stock before healthy stock.
+        product_rows.sort(
+            key=lambda p: (
+                p.days_of_supply is None,
+                p.days_of_supply or 0,
+                STATUS_RANK[p.status],
+                p.sku,
+            )
+        )
         by_category = sorted(categories.values(), key=lambda c: (-c.value_at_cost, c.category))
         for category in by_category:
             category.value_at_cost = _money(category.value_at_cost)
@@ -701,6 +710,22 @@ def duration_kpi(durations: Iterable[timedelta]) -> DurationKpi:
 def rate_kpi(good: int, total: int) -> RateKpi:
     percent = _ratio(Decimal(100 * good) / total, 1) if total else None
     return RateKpi(good=good, total=total, percent=percent)
+
+
+STATUS_RANK = {"out": 0, "low": 1, "ok": 2}
+
+
+def days_of_supply(available: int, daily_demand: Decimal) -> Decimal | None:
+    """Days the available units last at the daily demand.
+
+    Nothing available lasts 0 days, with or without demand; available stock without
+    any demand has no end (None).
+    """
+    if available <= 0:
+        return Decimal("0.0")
+    if not daily_demand:
+        return None
+    return _ratio(available / daily_demand, 1)
 
 
 def stock_status(available: int, min_stock: int) -> str:

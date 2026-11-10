@@ -33,7 +33,7 @@ export function KpiCard({
     <section
       aria-label={label}
       aria-busy={isLoading}
-      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
     >
       <h3 className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</h3>
       {isLoading ? (

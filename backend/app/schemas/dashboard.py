@@ -103,7 +103,8 @@ class ProductStockKpi(BaseModel):
     units_available: int
     units_picked: int
     avg_daily_demand: Decimal  # units picked per day in the period
-    days_of_supply: Decimal | None  # available / daily demand; None without demand
+    # available / daily demand; 0 when nothing is available; None for stock without demand
+    days_of_supply: Decimal | None
     turnover: Decimal | None  # units picked / average units on hand
     value_at_cost: Decimal | None
 
@@ -118,7 +119,7 @@ class InventoryDashboard(BaseModel):
     days_of_supply: Decimal | None
     stock_status: StockStatusCounts
     by_category: list[CategoryStock]
-    products: list[ProductStockKpi]  # most urgent first (fewest days of supply)
+    products: list[ProductStockKpi]  # most urgent first: empty, then fewest days of supply
     products_total: int
 
 

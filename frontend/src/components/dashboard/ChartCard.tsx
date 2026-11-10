@@ -95,7 +95,7 @@ export function ChartCard({
     <figure
       aria-labelledby={titleId}
       aria-busy={isLoading || isRefreshing}
-      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
     >
       <div className="mb-3 flex items-start justify-between gap-3">
         <figcaption>

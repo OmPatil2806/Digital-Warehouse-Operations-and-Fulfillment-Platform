@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatDays, formatHours, formatPercentage, formatShortDate } from './format'
+import { formatDays, formatHours, formatPercentage, formatShortDate, plural } from './format'
 
 describe('dashboard formatters', () => {
   it.each([
@@ -38,5 +38,16 @@ describe('dashboard formatters', () => {
   it('formats API days in UTC, whatever the local time zone', () => {
     expect(formatShortDate('2026-11-07')).toBe('7 Nov')
     expect(formatShortDate('2026-01-01')).toBe('1 Jan')
+  })
+})
+
+describe('plural', () => {
+  it.each([
+    [1, 'product', undefined, '1 product'],
+    [0, 'product', undefined, '0 products'],
+    [2, 'delivery', 'deliveries', '2 deliveries'],
+    [4026, 'unit', undefined, '4,026 units'],
+  ])('plural(%s, %s)', (count, word, many, expected) => {
+    expect(plural(count, word, many)).toBe(expected)
   })
 })

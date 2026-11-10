@@ -25,6 +25,7 @@ import {
   formatPercentage,
   plural,
 } from '../../utils/format'
+import { csvFilename, type CsvTable } from '../../utils/csv'
 import { Badge } from '../common/Badge'
 import { DataTable, type Column } from '../common/DataTable'
 import { BarListChart } from '../dashboard/BarListChart'
@@ -35,6 +36,8 @@ import { OrdersTrendChart } from '../dashboard/OrdersTrendChart'
 import { StockStatusChart } from '../dashboard/StockStatusChart'
 import { SupplierChart } from '../dashboard/SupplierChart'
 import { STATUS_LABELS } from '../orders/orderFormat'
+import { ExportCsvButton } from './ExportCsvButton'
+import { fulfillmentCsv, inventoryCsv, supplierCsv, warehouseCsv } from './reportExports'
 
 interface PanelProps {
   range: DateRangeParams
@@ -44,6 +47,31 @@ interface PanelProps {
 
 const KEEP = { keepPrevious: true }
 const PRODUCT_ROWS = 25 // most urgent products listed in the inventory report
+
+const EXPORT_ALL_PRODUCTS = 500 // the API maximum
+
+/** The export button, right-aligned above a report. */
+function ExportRow({
+  name,
+  range,
+  load,
+  disabled,
+}: {
+  name: string
+  range: DateRangeParams
+  load: () => Promise<CsvTable> | CsvTable
+  disabled: boolean
+}) {
+  return (
+    <div className="flex justify-end">
+      <ExportCsvButton
+        filename={csvFilename(name, range.date_from, range.date_to)}
+        load={load}
+        disabled={disabled}
+      />
+    </div>
+  )
+}
 
 function Problem({ message }: { message: string | null }) {
   if (!message) return null
@@ -132,6 +160,14 @@ export function InventoryReport({ range, financials }: PanelProps) {
 
   return (
     <div className="space-y-6">
+      <ExportRow
+        name="inventory-report"
+        range={range}
+        disabled={!d}
+        load={async () =>
+          inventoryCsv(await getInventoryDashboard(range, EXPORT_ALL_PRODUCTS), financials)
+        }
+      />
       <Problem message={query.errorMessage} />
       <Tiles>
         {financials ? (
@@ -246,6 +282,12 @@ export function FulfillmentReport({ range }: PanelProps) {
 
   return (
     <div className="space-y-6">
+      <ExportRow
+        name="fulfillment-per-day"
+        range={range}
+        disabled={!d}
+        load={() => fulfillmentCsv(d!)}
+      />
       <Problem message={query.errorMessage} />
       <Tiles>
         <KpiCard
@@ -363,6 +405,7 @@ export function WarehouseReport({ range }: PanelProps) {
 
   return (
     <div className="space-y-6">
+      <ExportRow name="warehouse-zones" range={range} disabled={!d} load={() => warehouseCsv(d!)} />
       <Problem message={query.errorMessage} />
       <Tiles>
         <KpiCard
@@ -514,6 +557,12 @@ export function SupplierReport({ range, financials }: PanelProps) {
 
   return (
     <div className="space-y-6">
+      <ExportRow
+        name="supplier-report"
+        range={range}
+        disabled={!d}
+        load={() => supplierCsv(d!, financials)}
+      />
       <Problem message={query.errorMessage} />
       <Tiles>
         <KpiCard

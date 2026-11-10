@@ -2,7 +2,7 @@
 
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.5.0-blue)
+![Version](https://img.shields.io/badge/version-v0.6.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -12,7 +12,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 5 (order fulfillment) is complete: `v0.5.0`.** See the [Roadmap](#roadmap).
+> **Phase 6 (dashboards & reporting) is complete: `v0.6.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -316,6 +316,41 @@ In the web app: **Purchase orders** (Warehouse section): list with filters and o
 
 ---
 
+## Dashboards & Reporting
+
+KPIs from section 9.4 of the project document, computed from the operational tables so they always agree with the rest of the application. *Stock* KPIs describe the warehouse now; *period* KPIs count events in a chosen date range (UTC days, both ends included, default the last 30 days, at most 366 days).
+
+| Area | KPIs |
+|------|------|
+| **Inventory** | stock value at cost and selling price, available / reserved / damaged units, low-stock and out-of-stock products, inventory turnover (cost of units picked ÷ average stock value), days of supply, value per category, per-product demand |
+| **Fulfillment** | orders placed, shipped, delivered and cancelled per day, fulfillment time (confirmed → shipped) and order cycle time (placed → delivered) as average and median, on-time delivery rate, picking accuracy, orders by status |
+| **Warehouse** | bin occupancy, weight and volume use per zone and in total, picks per zone |
+| **Suppliers** | lead time (ordered → fully received) average, variance and standard deviation, on-time delivery rate, open and overdue purchase orders |
+
+Earlier stock levels are rebuilt from the immutable movement history; demand means units *picked* for orders (receipts, transfers and corrections are not demand). Every KPI is tested on hand-built data whose answers are known in advance.
+
+### Dashboard endpoints (`/api/v1/dashboards`)
+
+| Method | Path | Who | Money values |
+|--------|------|-----|--------------|
+| `GET` | `/overview` | admin, manager, staff | admin, manager |
+| `GET` | `/inventory` (`limit`) | admin, manager, staff | admin, manager |
+| `GET` | `/fulfillment` | admin, manager, staff | none |
+| `GET` | `/warehouse` | admin, manager, staff | none |
+| `GET` | `/suppliers` | admin, manager, staff | admin, manager |
+
+All take `date_from` and `date_to` (ISO dates). Customers receive 403.
+
+### In the web app
+
+- **Home page by role**: managers see KPI tiles, orders per day, stock status, the products running out first and the latest alerts for a chosen period; staff see today's work (to pick, to pack, shipped, delayed, low stock, purchase orders to receive); customers see their own orders and parcels.
+- **Reports** (managers and staff): Inventory, Fulfillment, Warehouse and Suppliers tabs with KPI tiles, charts and tables; the tab and period stay in the address bar.
+- **Every chart has a table view** with the exact numbers. Charts use a colour-blind-safe palette (validated), status shown with icons and words, never colour alone.
+- **Export CSV** on every report tab: raw values (plain numbers, ISO dates, UTF-8) for Excel or pandas; staff exports leave out money; cells that look like spreadsheet formulas are neutralised. (Excel with German regional settings: open via *Data → From Text/CSV* and choose comma as separator.)
+- The ML insight KPIs (forecast error, predicted stockouts, high-risk orders) follow in Phases 8 and 9.
+
+---
+
 ## Architecture
 
 ```
@@ -351,8 +386,8 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ✅
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
-- [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`) 🚧 *in progress: KPI APIs done (`/api/v1/dashboards/overview`, `/inventory`, `/fulfillment`, `/warehouse`, `/suppliers`) the chart building blocks (Recharts) and the role-specific home dashboard and the Reports page (inventory, fulfillment, warehouse, suppliers); CSV export and v0.6.0 next*
-- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`)
+- [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
+- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`) ⏭️ *next*
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import * as dashboardApi from '../api/dashboardApi'
+import * as csv from '../utils/csv'
 import {
   makeFulfillment,
   makeInventory,
@@ -20,7 +21,18 @@ vi.mock('../api/dashboardApi', async (importOriginal) => ({
   getWarehouseDashboard: vi.fn(),
   getSupplierDashboard: vi.fn(),
 }))
+vi.mock('../utils/csv', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../utils/csv')>()),
+  downloadCsv: vi.fn(),
+}))
 const api = vi.mocked(dashboardApi)
+const download = vi.mocked(csv.downloadCsv)
+
+/** The file the last export produced: name and CSV text. */
+function lastExport() {
+  const [name, table] = download.mock.lastCall!
+  return { name, text: csv.toCsv(table), rows: table.rows.length }
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -189,5 +201,82 @@ describe('ReportsPage', () => {
     expect(
       (await tile('Average lead time')).getByText(/No purchase order fully received/),
     ).toBeInTheDocument()
+  })
+})
+
+describe('CSV export', () => {
+  const custom = 'range=custom&from=2026-10-01&to=2026-10-31'
+
+  it('exports every product, with money, for managers', async () => {
+    api.getInventoryDashboard.mockImplementation(async (_range, limit) =>
+      limit === 500 ? makeInventory() : makeInventory({ products: [] }),
+    )
+    const user = renderPage('manager', `/reports?${custom}`)
+    await tile('Stock value')
+
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+    await waitFor(() => expect(download).toHaveBeenCalledOnce())
+    expect(api.getInventoryDashboard).toHaveBeenLastCalledWith(
+      { date_from: '2026-10-01', date_to: '2026-10-31' },
+      500,
+    )
+    const file = lastExport()
+    expect(file.name).toBe('inventory-report_2026-10-01_2026-10-31.csv')
+    expect(file.text.split('\r\n').slice(0, 2)).toEqual([
+      'sku,name,category,status,min_stock,units_on_hand,units_available,units_picked,avg_daily_demand,days_of_supply,turnover,value_at_cost_eur',
+      'TOO-LAD1,Aluminium Step Ladder,Tools,out,3,0,0,1,0.03,0.0,,0.00',
+    ])
+    expect(
+      await screen.findByText(/Saved inventory-report_2026-10-01_2026-10-31.csv \(3 rows\)/),
+    ).toBeInTheDocument()
+  })
+
+  it('leaves money out of staff exports', async () => {
+    const user = renderPage('staff', '/reports?view=suppliers')
+    await tile('Average lead time')
+
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+    await waitFor(() => expect(download).toHaveBeenCalledOnce())
+    const header = lastExport().text.split('\r\n')[0]
+    expect(header).toContain('lead_time_stddev_days')
+    expect(header).not.toContain('open_value')
+    expect(lastExport().text).not.toContain('1440')
+  })
+
+  it.each([
+    ['fulfillment', 'Orders placed', 'fulfillment-per-day', 'day,placed,shipped,delivered', 3],
+    [
+      'warehouse',
+      'Bins in use',
+      'warehouse-zones',
+      'warehouse,zone,name,zone_type,is_active,bins',
+      3,
+    ],
+  ])('exports the %s table', async (view, tileName, name, header, rows) => {
+    const user = renderPage('manager', `/reports?view=${view}&${custom}`)
+    await tile(tileName)
+
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+    await waitFor(() => expect(download).toHaveBeenCalledOnce())
+    const file = lastExport()
+    expect(file.name).toBe(`${name}_2026-10-01_2026-10-31.csv`)
+    expect(file.text.startsWith(header)).toBe(true)
+    expect(file.rows).toBe(rows)
+  })
+
+  it('reports a failed export', async () => {
+    const user = renderPage('manager')
+    await tile('Stock value')
+    api.getInventoryDashboard.mockRejectedValueOnce(new Error('Server down'))
+
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }))
+    expect(await screen.findByText(/Export failed/)).toBeInTheDocument()
+    expect(download).not.toHaveBeenCalled()
+  })
+
+  it('cannot export before the report has loaded', () => {
+    api.getWarehouseDashboard.mockReturnValue(new Promise(() => {}))
+    renderPage('manager', '/reports?view=warehouse')
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled()
   })
 })

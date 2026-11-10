@@ -351,7 +351,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 3: Master data & warehouse layout**: products, suppliers and physical locations (`v0.3.0`) ✅
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
-- [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`) 🚧 *in progress: KPI APIs done (`/api/v1/dashboards/overview`, `/inventory`, `/fulfillment`, `/warehouse`, `/suppliers`); dashboard screens next*
+- [ ] **Phase 6: Dashboards & reporting**: KPI dashboards and alerts (`v0.6.0`) 🚧 *in progress: KPI APIs done (`/api/v1/dashboards/overview`, `/inventory`, `/fulfillment`, `/warehouse`, `/suppliers`) and the chart building blocks (Recharts); dashboard screens next*
 - [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`)
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)

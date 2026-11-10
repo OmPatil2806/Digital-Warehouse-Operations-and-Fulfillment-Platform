@@ -27,3 +27,38 @@ export function formatPercent(value: string | number): string {
 export function formatDimensions(length: string, width: string, height: string): string {
   return `${formatNumber(length)} × ${formatNumber(width)} × ${formatNumber(height)} cm`
 }
+
+// ------------------------------------------------------------------ dashboards
+/** An API percentage such as "66.7" -> "66.7 %". */
+export function formatPercentage(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  return `${Number(value).toLocaleString('en-IE', { maximumFractionDigits: 1 })} %`
+}
+
+/** Hours as the reader thinks of them: "45 min", "6.5 h", "22 h" or "4.5 days". */
+export function formatHours(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const hours = Number(value)
+  if (hours < 1) return `${Math.round(hours * 60)} min`
+  if (hours < 10) return `${Number(hours.toFixed(1))} h`
+  if (hours < 48) return `${Math.round(hours)} h`
+  return formatDays(hours / 24)
+}
+
+/** "4.0" -> "4 days", "1" -> "1 day", "2.25" -> "2.3 days". */
+export function formatDays(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—'
+  const days = Number(Number(value).toFixed(1))
+  return `${days.toLocaleString('en-IE')} ${days === 1 ? 'day' : 'days'}`
+}
+
+const shortDate = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+})
+
+/** A calendar day from the API ("2026-11-07") as a short axis label: "7 Nov". */
+export function formatShortDate(day: string): string {
+  return shortDate.format(new Date(`${day}T00:00:00Z`))
+}

@@ -388,7 +388,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
-- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`) 🚧 *in progress: dataset sizes and business patterns (`ml/data_generation`) done; master data and layout next*
+- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`) 🚧 *in progress: dataset sizes, business patterns, master data and warehouse layout done; purchasing and starting stock next*
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
@@ -436,7 +436,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── package.json
 │   └── vite.config.ts / vitest.config.ts / eslint.config.js
 ├── ml/
-│   ├── data_generation/      # synthetic data: sizes and seed (config.py), business patterns (patterns.py)
+│   ├── data_generation/      # synthetic data: sizes and seed, business patterns, master data, warehouse layout
 │   ├── tests/                # Pytest tests of the generator
 │   ├── pyproject.toml        # Ruff, Black and Pytest settings
 │   └── requirements.txt      # backend packages + numpy

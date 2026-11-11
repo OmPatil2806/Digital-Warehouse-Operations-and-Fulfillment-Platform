@@ -14,7 +14,7 @@ and the units actually ordered are drawn from a Poisson distribution around that
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from math import exp
 
@@ -307,3 +307,28 @@ PICK_DAMAGE_PROBABILITY = 0.002  # a unit found damaged while picking
 
 def return_probability(category: str) -> float:
     return RETURN_PROBABILITY.get(category, 0.03)
+
+
+# ====================================================================== demand volume
+UNITS_PER_ORDER = 4.0  # average units in an order (about 2.5 lines x 1.6 units)
+
+
+def expected_daily_units(profile: DemandProfile, start: date, days: int) -> float:
+    """Average expected units per day over the history (every third day is enough:
+    3 and 7 share no factor, so all weekdays are covered evenly)."""
+    sample = range(0, days, 3)
+    total = sum(demand_rate(profile, start + timedelta(days=i), i, days) for i in sample) / len(
+        sample
+    )
+    if profile.intermittent:
+        total *= INTERMITTENT_SALE_DAY_PROBABILITY  # rate is only realised on sale days
+    return total
+
+
+def scale_profiles(
+    profiles: Sequence[DemandProfile], target_daily_units: float, start: date, days: int
+) -> list[DemandProfile]:
+    """Scale all base rates so the expected total demand per day hits the target."""
+    current = sum(expected_daily_units(p, start, days) for p in profiles)
+    factor = target_daily_units / current if current else 1.0
+    return [replace(p, base_rate=p.base_rate * factor) for p in profiles]

@@ -1,0 +1,5 @@
+# Synthetic data generation and machine learning (Phase 7+).
+# The generator writes through the backend's models, so it needs the backend packages too.
+-r ../backend/requirements-dev.txt
+
+numpy==2.5.4

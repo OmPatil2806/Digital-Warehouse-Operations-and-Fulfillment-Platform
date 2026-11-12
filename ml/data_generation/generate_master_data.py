@@ -245,14 +245,17 @@ def _supplier_offers(ctx: GenerationContext) -> None:
         for rank, supplier_id in enumerate(product.supplier_ids):
             supplier = suppliers[supplier_id]
             markup = 1.0 if rank == 0 else float(rng.uniform(1.03, 1.10))
+            cost = _money(float(product.unit_cost) * markup)
+            product.offer_costs[supplier_id] = cost
+            product.min_order_qty = max(1, product.min_stock // 2)
             rows.append(
                 {
                     "supplier_id": supplier_id,
                     "product_id": product.id,
                     "supplier_sku": f"{supplier.code[-3:]}-{product.sku}",
-                    "unit_cost": _money(float(product.unit_cost) * markup),
+                    "unit_cost": cost,
                     "lead_time_days": None,  # the supplier's usual lead time
-                    "min_order_qty": max(1, product.min_stock // 2),
+                    "min_order_qty": product.min_order_qty,
                     "is_preferred": rank == 0,
                     **_stamp(ctx),
                 }

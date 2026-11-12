@@ -16,6 +16,7 @@ and the units actually ordered are drawn from a Poisson distribution around that
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from functools import cache
 from math import exp
 
 import numpy as np
@@ -55,6 +56,7 @@ def season_factor(category: str, day: date, strength: float = 1.0) -> float:
     return 1.0 + strength * (curve[day.month - 1] - 1.0)
 
 
+@cache
 def black_friday(year: int) -> date:
     """The day after the fourth Thursday of November."""
     first = date(year, 11, 1)

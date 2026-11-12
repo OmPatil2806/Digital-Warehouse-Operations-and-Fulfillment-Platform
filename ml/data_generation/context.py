@@ -45,6 +45,8 @@ class ProductInfo:
     storage: str  # zone type it belongs in: picking, bulk, cold or hazardous
     profile: DemandProfile
     supplier_ids: list[int] = field(default_factory=list)  # preferred first
+    offer_costs: dict[int, Decimal] = field(default_factory=dict)  # supplier -> unit cost
+    min_order_qty: int = 1
 
 
 @dataclass

@@ -23,12 +23,27 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from app.models import Inventory, InventoryMovement
+from app.models import Inventory, InventoryMovement, StockReservation
 from data_generation.context import BinInfo, GenerationContext, ProductInfo
 
 HEAVY_KG = Decimal(8)
 FAST_MOVER_SHARE = 0.2  # the fastest-selling fifth of the catalog
 FALLBACK_ZONES = ("picking", "bulk")
+
+
+@dataclass(slots=True)
+class Reservation:
+    """Units of a product in one bin held for an order (backend: stock_reservations)."""
+
+    id: int
+    product_id: int
+    bin_id: int
+    quantity: int
+    order_id: int
+    reason: str
+    created: datetime
+    status: str = "active"  # active -> released | fulfilled
+    closed: datetime | None = None
 
 
 @dataclass
@@ -68,6 +83,9 @@ class StockLedger:
         self._preferences: dict[tuple[int, int], list[int]] = {}
         self._movements: list[dict] = []
         self.movement_count = 0
+        self.reservations: dict[int, Reservation] = {}  # active ones
+        self._closed_reservations: list[Reservation] = []
+        self._reservation_ids = 0
 
     # --------------------------------------------------------------------- queries
     def row(self, product_id: int, bin_id: int) -> StockRow:
@@ -155,6 +173,153 @@ class StockLedger:
         for bin_id in preferences:
             if bin_id not in seen:
                 yield bin_id
+
+    # ---------------------------------------------------------------- reservations
+    def reservation_order(self, product_id: int, warehouse_id: int) -> list[int]:
+        """Bins to reserve from, like the application: picking zones first, then racks
+        closest to packing, then location (bin ids follow location codes)."""
+        bins = self.bins_of(product_id, warehouse_id)
+        return sorted(
+            bins,
+            key=lambda b: (self.bins[b].zone_type != "picking", self.bins[b].distance_m, b),
+        )
+
+    def reserve(
+        self,
+        product_id: int,
+        warehouse_id: int,
+        quantity: int,
+        when: datetime,
+        *,
+        order_id: int,
+        reason: str,
+    ) -> list[Reservation]:
+        """Hold up to `quantity` available units for an order (one reservation per bin)."""
+        product = self.products[product_id]
+        made: list[Reservation] = []
+        remaining = quantity
+        for bin_id in self.reservation_order(product_id, warehouse_id):
+            units = min(remaining, self.rows[(product_id, bin_id)].available)
+            if units <= 0:
+                continue
+            self._reservation_ids += 1
+            reservation = Reservation(
+                self._reservation_ids, product_id, bin_id, units, order_id, reason, when
+            )
+            self.reservations[reservation.id] = reservation
+            self._change(
+                product,
+                bin_id,
+                warehouse_id,
+                "reservation",
+                units,
+                0,
+                units,
+                0,
+                when,
+                reason,
+                reference=("reservation", reservation.id),
+            )
+            made.append(reservation)
+            remaining -= units
+            if remaining == 0:
+                break
+        return made
+
+    def release(self, reservation_id: int, when: datetime, *, reason: str) -> None:
+        """Give the held units back (order cancelled)."""
+        reservation = self.reservations.pop(reservation_id)
+        product = self.products[reservation.product_id]
+        self._change(
+            product,
+            reservation.bin_id,
+            self.bins[reservation.bin_id].warehouse_id,
+            "release",
+            reservation.quantity,
+            0,
+            -reservation.quantity,
+            0,
+            when,
+            reason,
+            reference=("reservation", reservation.id),
+        )
+        self._close(reservation, "released", when)
+
+    def pick(
+        self,
+        reservation_id: int,
+        picked: int,
+        when: datetime,
+        *,
+        reason: str,
+        reference: tuple[str, int],
+    ) -> None:
+        """Take reserved units out for shipping; units not picked are released."""
+        reservation = self.reservations.pop(reservation_id)
+        product = self.products[reservation.product_id]
+        warehouse_id = self.bins[reservation.bin_id].warehouse_id
+        if not 0 <= picked <= reservation.quantity:
+            raise AssertionError("cannot pick more than was reserved")
+        if picked:
+            self._change(
+                product,
+                reservation.bin_id,
+                warehouse_id,
+                "pick",
+                picked,
+                -picked,
+                -picked,
+                0,
+                when,
+                reason,
+                reference=reference,
+            )
+        not_picked = reservation.quantity - picked
+        if not_picked:
+            self._change(
+                product,
+                reservation.bin_id,
+                warehouse_id,
+                "release",
+                not_picked,
+                0,
+                -not_picked,
+                0,
+                when,
+                f"{reason}: {not_picked} not picked",
+                reference=("reservation", reservation.id),
+            )
+        self._close(reservation, "fulfilled" if picked else "released", when)
+
+    def _close(self, reservation: Reservation, status: str, when: datetime) -> None:
+        reservation.status = status
+        reservation.closed = when
+        self._closed_reservations.append(reservation)
+        if len(self._closed_reservations) >= self.ctx.config.batch_size:
+            self._write_reservations(self._closed_reservations)
+            self._closed_reservations = []
+
+    def _write_reservations(self, reservations: list[Reservation]) -> None:
+        self.ctx.writer.insert(
+            StockReservation.__table__,
+            (
+                {
+                    "id": r.id,
+                    "product_id": r.product_id,
+                    "bin_id": r.bin_id,
+                    "quantity": r.quantity,
+                    "status": r.status,
+                    "reference_type": "order",
+                    "reference_id": r.order_id,
+                    "reason": r.reason,
+                    "created_by_id": None,
+                    "closed_at": r.closed,
+                    "created_at": r.created,
+                    "updated_at": r.closed or r.created,
+                }
+                for r in reservations
+            ),
+        )
 
     def remove(
         self,
@@ -245,8 +410,9 @@ class StockLedger:
             self._movements = []
 
     def finish(self) -> None:
-        """Write the remaining movements and the final stock rows."""
+        """Write the remaining movements, reservations and the final stock rows."""
         self.flush()
+        self._write_reservations(self._closed_reservations + list(self.reservations.values()))
         self.ctx.writer.insert(Inventory.__table__, self._inventory_rows())
 
     def _inventory_rows(self) -> Iterator[dict]:

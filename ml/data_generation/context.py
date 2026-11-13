@@ -62,6 +62,11 @@ class CustomerInfo:
     id: int
     customer_type: str
     activity: float  # relative order frequency
+    name: str = ""
+    address_line: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str | None = None
 
 
 @dataclass

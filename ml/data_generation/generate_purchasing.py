@@ -31,7 +31,7 @@ from data_generation.context import GenerationContext, ProductInfo
 from data_generation.patterns import sample_lead_time
 from data_generation.simulation import Simulation, at
 
-SAFETY_DAYS = 5
+SAFETY_DAYS = 8
 COVER_DAYS = 30
 OPENING_FILL = (0.6, 1.0)  # opening stock as a share of the order-up-to level
 SPLIT_DELIVERY_SHARE = 0.08  # purchase orders delivered in two parts

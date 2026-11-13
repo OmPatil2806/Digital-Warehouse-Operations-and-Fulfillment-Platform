@@ -296,11 +296,17 @@ def _customers(ctx: GenerationContext) -> None:
                 **_stamp(ctx),
             }
         )
+        row = rows[-1]
         ctx.customers.append(
             CustomerInfo(
                 id=index + 1,
-                customer_type="business" if business else "consumer",
+                customer_type=row["customer_type"],
                 activity=activity,
+                name=row["name"],
+                address_line=row["address_line"],
+                postal_code=row["postal_code"],
+                city=row["city"],
+                country=row["country"],
             )
         )
     ctx.writer.insert(Customer.__table__, rows)

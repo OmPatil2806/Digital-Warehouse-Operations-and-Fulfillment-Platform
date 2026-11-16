@@ -22,6 +22,7 @@ from app.models.inventory import (
     StockReservation,
     StockTransfer,
 )
+from app.models.ml import MetricSplit, ModelMetric, ModelStatus, ModelVersion, UseCase
 from app.models.order import (
     Customer,
     CustomerType,
@@ -72,6 +73,10 @@ __all__ = [
     "DocumentStatus",
     "Inventory",
     "InventoryMovement",
+    "MetricSplit",
+    "ModelMetric",
+    "ModelStatus",
+    "ModelVersion",
     "MovementType",
     "Order",
     "OrderItem",
@@ -106,6 +111,7 @@ __all__ = [
     "StockTransfer",
     "Supplier",
     "SupplierProduct",
+    "UseCase",
     "User",
     "Warehouse",
     "Zone",

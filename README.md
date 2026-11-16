@@ -483,7 +483,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
-- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
+- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`) 🚧 *in progress: ML foundation (TensorFlow, chronological splits, configs, metrics, model registry) done; demand forecasting next*
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 
@@ -532,9 +532,15 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 ├── ml/
 │   ├── data_generation/      # synthetic data: sizes and seed, patterns, master data, layout, day-by-day simulation, purchasing, orders, fulfillment, shipping, returns
 │   ├── data_validation/      # dataset checks (integrity, volume, business patterns); reports/ holds the full-dataset report
-│   ├── tests/                # Pytest tests of the generator
+│   ├── configs/              # YAML settings: common.yaml (seed, split, training) + one file per use case
+│   ├── feature_engineering/  # feature tables per use case and their schemas
+│   ├── training/             # data extraction, chronological splits, configs, Keras setup
+│   ├── evaluation/           # metrics for all six use cases
+│   ├── registry/             # register trained models and select the best per use case
+│   ├── artifacts/            # saved .keras models (created locally, not committed)
+│   ├── tests/                # Pytest tests of the generator and the ML code
 │   ├── pyproject.toml        # Ruff, Black and Pytest settings
-│   └── requirements.txt      # backend packages + numpy
+│   └── requirements.txt      # backend packages + NumPy, pandas, scikit-learn, TensorFlow
 ├── scripts/
 │   ├── create_admin.py       # create the first administrator
 │   ├── generate_data.py      # generate, load and validate the two-year synthetic dataset

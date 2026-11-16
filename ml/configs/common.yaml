@@ -1,0 +1,20 @@
+# Settings shared by every use case. A use case's own file (e.g. demand_forecasting.yaml)
+# can override any of them and adds one entry per model under `models`.
+
+# Random seed for NumPy, Python and TensorFlow: the same data and seed train the same model.
+seed: 20261111
+
+# Chronological split: the most recent days are kept for testing, the days before for
+# validation (early stopping, threshold choice); everything older trains the models.
+split:
+  validation_days: 60
+  test_days: 90
+
+# Keras training defaults.
+training:
+  max_epochs: 40
+  batch_size: 256
+  learning_rate: 0.001
+  patience: 5 # epochs without improvement on validation before early stopping
+
+models: {}

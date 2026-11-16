@@ -483,7 +483,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
-- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`) 🚧 *in progress: ML foundation (TensorFlow, chronological splits, configs, metrics, model registry) and demand forecasting (LSTM selected, 15 % better than the best baseline) done; reorder recommendation next*
+- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`) 🚧 *in progress: ML foundation (TensorFlow, chronological splits, configs, metrics, model registry) demand forecasting (LSTM, 15 % better than the best baseline) and reorder recommendation (LSTM stockout model, twice the PR-AUC of the reorder-point formula) done; movement classification next*
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 

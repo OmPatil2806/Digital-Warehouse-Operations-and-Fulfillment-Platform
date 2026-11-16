@@ -1,0 +1,27 @@
+# Reorder recommendation: probability that a product runs out in a warehouse within
+# the horizon, from snapshots of its stock and demand. The reorder-point baseline needs
+# no settings; every model here is trained and compared on the test period (PR-AUC).
+
+features:
+  horizon: 14 # days looked ahead: does available stock reach zero?
+  sequence_days: 28 # days of demand and stock history the LSTM reads
+  train_stride: 3 # a training snapshot every 3 days per product and warehouse
+  eval_stride: 7 # validation and test snapshots weekly
+  max_train_rows: 300000 # random sample of training snapshots
+
+training:
+  max_epochs: 30
+  batch_size: 1024
+  patience: 4
+
+models:
+  dense:
+    units: [64, 32]
+    dropout: 0.1
+  wide_deep:
+    units: [64, 32]
+    dropout: 0.1
+  lstm:
+    lstm_units: 32
+    units: [64]
+    dropout: 0.1

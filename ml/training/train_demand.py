@@ -11,8 +11,8 @@ Run from ml/:  python -m training.train_demand [--database PATH] [--models lstm 
 
 import argparse
 import time
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -30,10 +30,11 @@ from feature_engineering.demand_features import (
     origins_between,
     product_scale,
 )
-from registry.register_model import Selection, register_model, select_best
+from registry.register_model import Selection
 from training import keras_setup
 from training.config import ExperimentConfig, load_config
 from training.data import dataset_version, history_range, open_dataset
+from training.experiment import ModelResult, Reporter, register_results
 from training.splits import chronological_split
 
 USE_CASE = "demand_forecasting"
@@ -44,21 +45,6 @@ REPORT = Path(__file__).resolve().parents[1] / "evaluation" / "reports" / f"{USE
 FEATURES = [f"history:{name}" for name in HISTORY_FEATURES] + [
     f"future:{name}" for name in FUTURE_FEATURES
 ]
-
-Reporter = Callable[[str], None]
-
-
-@dataclass
-class ModelResult:
-    name: str
-    is_baseline: bool
-    validation: dict[str, float]
-    test: dict[str, float]
-    seconds: float
-    params: dict = field(default_factory=dict)
-    artifact: Path | None = None
-    epochs: int = 0
-    model_version_id: int | None = None
 
 
 @dataclass
@@ -238,25 +224,14 @@ def run(
             f"({epochs} epochs, {seconds:.0f}s)"
         )
 
-    hyper_common = {**config.features, "seed": config.seed}
-    for result in results:
-        result.model_version_id = register_model(
-            engine,
-            use_case=USE_CASE,
-            model_name=result.name,
-            version=version,
-            dataset_version=data_version,
-            features=FEATURES,
-            hyperparameters={**hyper_common, **result.params, "epochs": result.epochs},
-            metrics={"validation": result.validation, "test": result.test},
-            artifact_path=keras_setup.relative_to_ml(result.artifact) if result.artifact else None,
-            is_baseline=result.is_baseline,
-            train_seconds=result.seconds,
-        )
-    selection = select_best(
+    selection = register_results(
         engine,
-        USE_CASE,
-        [r.model_version_id for r in results if r.model_version_id is not None],
+        results,
+        use_case=USE_CASE,
+        version=version,
+        dataset_version=data_version,
+        features=FEATURES,
+        common_params={**config.features, "seed": config.seed},
         metric=SELECTION_METRIC,
         higher_is_better=False,
     )

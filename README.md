@@ -437,7 +437,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   └── vite.config.ts / vitest.config.ts / eslint.config.js
 ├── ml/
 │   ├── data_generation/      # synthetic data: sizes and seed, patterns, master data, layout, day-by-day simulation, purchasing, orders, fulfillment, shipping, returns
-│   ├── data_validation/      # dataset checks (integrity, volume, business patterns) and the validation report
+│   ├── data_validation/      # dataset checks (integrity, volume, business patterns); reports/ holds the full-dataset report
 │   ├── tests/                # Pytest tests of the generator
 │   ├── pyproject.toml        # Ruff, Black and Pytest settings
 │   └── requirements.txt      # backend packages + numpy

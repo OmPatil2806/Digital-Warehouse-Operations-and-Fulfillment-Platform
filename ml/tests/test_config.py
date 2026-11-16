@@ -8,7 +8,7 @@ from data_generation.config import DEFAULT_SEED, SIZE_NAMES, get_config
 def test_full_size_matches_the_project_document() -> None:
     full = get_config("full", end_date=date(2026, 11, 10))
     assert (full.warehouses, full.zones, full.racks) == (3, 18, 180)
-    assert full.bins == 4_320  # "several thousand"
+    assert full.bins == 5_760  # "several thousand"
     assert (full.products, full.suppliers, full.customers) == (2_000, 100, 10_000)
     assert full.orders == 500_000
     assert full.days == 730  # two years

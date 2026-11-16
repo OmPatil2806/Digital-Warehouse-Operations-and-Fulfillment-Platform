@@ -194,7 +194,7 @@ def test_every_product_fits_somewhere(small: Small) -> None:
 
 def test_full_size_layout(tmp_path: Path, builder: Builder) -> None:
     ctx, engine = builder(tmp_path / "full.db", "full", products=8, customers=1, orders=10)
-    assert scalar(engine, "SELECT COUNT(*) FROM bins") == 4_320
+    assert scalar(engine, "SELECT COUNT(*) FROM bins") == 5_760
     assert scalar(engine, "SELECT COUNT(*) FROM zones") == 18
     assert scalar(engine, "SELECT COUNT(*) FROM racks") == 180
     per_warehouse = rows(

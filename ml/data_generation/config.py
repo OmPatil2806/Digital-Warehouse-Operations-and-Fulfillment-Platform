@@ -102,7 +102,7 @@ _SIZES: dict[str, dict[str, int]] = {
         "zones_per_warehouse": 6,  # 18 zones
         "racks_per_zone": 10,  # 180 racks
         "shelves_per_rack": 4,
-        "bins_per_shelf": 6,  # 4,320 bins
+        "bins_per_shelf": 8,  # 5,760 bins
         "products": 2_000,
         "suppliers": 100,
         "customers": 10_000,

@@ -229,7 +229,7 @@ def test_reorder_policy_and_second_sources(simulated: Simulated) -> None:
     ctx, _, extra = simulated
     process: PurchasingProcess = extra["purchasing"]
     assert process.reorder_point(2.0, 10) == 36.0  # 2 a day x (10 + 8 safety days)
-    assert process.order_up_to(2.0, 10) == 96.0  # + 30 days of cover
+    assert process.order_up_to(2.0, 10) == 78.0  # + 21 days of cover
     with_second = next(p for p in ctx.products if len(p.supplier_ids) == 2)
     preferred, second = with_second.supplier_ids
     assert process.choose_supplier(with_second, available=5) == preferred

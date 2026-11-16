@@ -23,7 +23,7 @@ from data_generation.context import GenerationContext
 from data_generation.stock import StockLedger
 
 # Share of all demand served by each warehouse (Stuttgart, Hamburg, Leipzig).
-WAREHOUSE_SHARES = (0.5, 0.3, 0.2)
+WAREHOUSE_SHARES = (0.4, 0.35, 0.25)
 TRACKING_DAYS = 28  # the purchasing policy looks at the last four weeks
 
 

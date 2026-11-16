@@ -86,10 +86,3 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# ==========================================================
-# Machine learning
-# ==========================================================
-# Trained models and checkpoints are large and created locally (scripts/train_models.py)
-ml/artifacts/*
-!ml/artifacts/.gitkeep

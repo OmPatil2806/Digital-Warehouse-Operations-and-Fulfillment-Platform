@@ -537,7 +537,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── training/             # data extraction, chronological splits, configs, Keras setup
 │   ├── evaluation/           # metrics for all six use cases
 │   ├── registry/             # register trained models and select the best per use case
-│   ├── artifacts/            # saved .keras models (created locally, not committed)
+│   ├── artifacts/            # saved .keras models (created when training, not committed)
 │   ├── tests/                # Pytest tests of the generator and the ML code
 │   ├── pyproject.toml        # Ruff, Black and Pytest settings
 │   └── requirements.txt      # backend packages + NumPy, pandas, scikit-learn, TensorFlow

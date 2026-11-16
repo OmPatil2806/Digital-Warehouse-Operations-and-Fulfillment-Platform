@@ -23,7 +23,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from app.models import Inventory, InventoryMovement, StockReservation
+from app.models import (
+    Inventory,
+    InventoryMovement,
+    StockAdjustment,
+    StockReservation,
+    StockTransfer,
+)
 from data_generation.context import BinInfo, GenerationContext, ProductInfo
 
 HEAVY_KG = Decimal(8)
@@ -84,6 +90,11 @@ class StockLedger:
         self._movements: list[dict] = []
         self.movement_count = 0
         self.reservations: dict[int, Reservation] = {}  # active ones
+        self.bin_products: dict[int, set[int]] = {}  # bin -> products with a stock row
+        self._adjustments: list[dict] = []
+        self._adjustment_ids = 0
+        self._transfers: list[dict] = []
+        self._transfer_ids = 0
         self._closed_reservations: list[Reservation] = []
         self._reservation_ids = 0
 
@@ -291,6 +302,161 @@ class StockLedger:
             )
         self._close(reservation, "fulfilled" if picked else "released", when)
 
+    # ------------------------------------------------- adjustments, returns, occupancy
+    def adjust(
+        self, product_id: int, bin_id: int, kind: str, quantity: int, when: datetime, *, reason: str
+    ) -> None:
+        """A completed stock adjustment like the application's: `decrease` (units lost:
+        on hand -), `damage` (units found damaged: damaged +) or `write_off` (damaged
+        units disposed of: on hand -, damaged -)."""
+        effects = {
+            "decrease": ("adjustment", -quantity, 0),
+            "damage": ("damage", 0, quantity),
+            "write_off": ("write_off", -quantity, -quantity),  # damaged units disposed of
+        }
+        movement_type, on_hand, damaged = effects[kind]
+        self._adjustment_ids += 1
+        self._adjustments.append(
+            {
+                "id": self._adjustment_ids,
+                "product_id": product_id,
+                "bin_id": bin_id,
+                "kind": kind,
+                "quantity": quantity,
+                "status": "completed",
+                "reason": reason[:255],
+                "requested_by_id": None,
+                "decided_by_id": None,
+                "decided_at": when,
+                "decision_note": None,
+                "created_at": when,
+                "updated_at": when,
+            }
+        )
+        self._change(
+            self.products[product_id],
+            bin_id,
+            self.bins[bin_id].warehouse_id,
+            movement_type,
+            quantity,
+            on_hand,
+            0,
+            damaged,
+            when,
+            reason[:255],
+            reference=("adjustment", self._adjustment_ids),
+        )
+
+    def receive_return(
+        self,
+        product_id: int,
+        bin_id: int,
+        quantity: int,
+        when: datetime,
+        *,
+        damaged: bool,
+        reason: str,
+        return_id: int,
+    ) -> None:
+        """Returned units into a given bin (on hand +, and damaged + when damaged)."""
+        self._change(
+            self.products[product_id],
+            bin_id,
+            self.bins[bin_id].warehouse_id,
+            "return",
+            quantity,
+            quantity,
+            0,
+            quantity if damaged else 0,
+            when,
+            reason[:255],
+            reference=("return", return_id),
+        )
+
+    def transfer(
+        self,
+        product_id: int,
+        from_bin: int,
+        to_bin: int,
+        quantity: int,
+        when: datetime,
+        *,
+        reason: str,
+    ) -> None:
+        """A completed stock transfer like the application's (transfer out, transfer in)."""
+        self._transfer_ids += 1
+        self._transfers.append(
+            {
+                "id": self._transfer_ids,
+                "product_id": product_id,
+                "from_bin_id": from_bin,
+                "to_bin_id": to_bin,
+                "quantity": quantity,
+                "status": "completed",
+                "reason": reason[:255],
+                "requested_by_id": None,
+                "decided_by_id": None,
+                "decided_at": when,
+                "decision_note": None,
+                "created_at": when,
+                "updated_at": when,
+            }
+        )
+        product = self.products[product_id]
+        reference = ("transfer", self._transfer_ids)
+        for bin_id, sign, kind in ((from_bin, -1, "transfer_out"), (to_bin, 1, "transfer_in")):
+            self._change(
+                product,
+                bin_id,
+                self.bins[bin_id].warehouse_id,
+                kind,
+                quantity,
+                sign * quantity,
+                0,
+                0,
+                when,
+                reason[:255],
+                reference=reference,
+            )
+
+    def move_to_storage(
+        self, product_id: int, from_bin: int, when: datetime, *, reason: str
+    ) -> int:
+        """Move the available units out of a bin (e.g. the returns zone) into the
+        product's normal storage bins; returns the units moved."""
+        product = self.products[product_id]
+        warehouse_id = self.bins[from_bin].warehouse_id
+        left = self.rows[(product_id, from_bin)].available
+        moved = 0
+        for bin_id in self._put_away_order(product, warehouse_id):
+            if left == 0:
+                break
+            if bin_id == from_bin or self.bins[bin_id].zone_type == "returns":
+                continue
+            units = min(left, self.room_for(product, bin_id))
+            if units > 0:
+                self.transfer(product_id, from_bin, bin_id, units, when, reason=reason)
+                left -= units
+                moved += units
+        return moved
+
+    def occupancy(self, warehouse_id: int) -> float:
+        """Share of the warehouse's bins holding stock (0..1)."""
+        bins = [b for b in self.ctx.bins if b.warehouse_id == warehouse_id]
+        return sum(1 for b in bins if self.load[b.id][0] > 0) / len(bins)
+
+    def stock_in_bin(self, bin_id: int) -> list[tuple[int, int]]:
+        """(product, on hand) of every stock row in the bin."""
+        return [
+            (product_id, self.rows[(product_id, bin_id)].on_hand)
+            for product_id in sorted(self.bin_products.get(bin_id, ()))
+        ]
+
+    def flush_reservations(self) -> None:
+        """Write the closed reservations now (orders about to be written point to them)."""
+        self._write_reservations(self._closed_reservations)
+        self._closed_reservations = []
+
     def _close(self, reservation: Reservation, status: str, when: datetime) -> None:
         reservation.status = status
         reservation.closed = when
@@ -379,6 +545,7 @@ class StockLedger:
         bins = self.product_bins.setdefault((product.id, warehouse_id), [])
         if bin_id not in bins:
             bins.append(bin_id)
+            self.bin_products.setdefault(bin_id, set()).add(product.id)
         row.first_movement = row.first_movement or when
         row.last_movement = when
         self._movements.append(
@@ -405,6 +572,12 @@ class StockLedger:
             self.flush()
 
     def flush(self) -> None:
+        if self._adjustments:
+            self.ctx.writer.insert(StockAdjustment.__table__, self._adjustments)
+            self._adjustments = []
+        if self._transfers:
+            self.ctx.writer.insert(StockTransfer.__table__, self._transfers)
+            self._transfers = []
         if self._movements:
             self.ctx.writer.insert(InventoryMovement.__table__, self._movements)
             self._movements = []
@@ -413,6 +586,7 @@ class StockLedger:
         """Write the remaining movements, reservations and the final stock rows."""
         self.flush()
         self._write_reservations(self._closed_reservations + list(self.reservations.values()))
+        self._closed_reservations = []  # written; orders written later must not repeat them
         self.ctx.writer.insert(Inventory.__table__, self._inventory_rows())
 
     def _inventory_rows(self) -> Iterator[dict]:

@@ -75,6 +75,7 @@ class CarrierInfo:
     code: str
     transit_days: int
     reliability: float
+    name: str = ""
 
 
 @dataclass

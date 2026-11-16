@@ -133,15 +133,16 @@ def test_reservations_match_the_stock(with_orders: Simulated) -> None:
 
 
 def test_order_lines_know_what_is_reserved_for_them(with_orders: Simulated) -> None:
+    """Like the application: a line's reserved units are its active reservations;
+    picking turns them into picked units."""
     _, engine, _ = with_orders
     mismatches = rows(
         engine,
-        "SELECT i.order_id, i.product_id FROM order_items i "
-        "JOIN orders o ON o.id = i.order_id LEFT JOIN ("
+        "SELECT i.order_id, i.product_id FROM order_items i LEFT JOIN ("
         "  SELECT reference_id, product_id, SUM(quantity) AS held FROM stock_reservations "
-        "  WHERE status != 'released' GROUP BY reference_id, product_id) r "
+        "  WHERE status = 'active' GROUP BY reference_id, product_id) r "
         "ON r.reference_id = i.order_id AND r.product_id = i.product_id "
-        "WHERE o.status != 'cancelled' AND COALESCE(r.held, 0) != i.quantity_reserved",
+        "WHERE COALESCE(r.held, 0) != i.quantity_reserved",
     )
     assert mismatches == []
 

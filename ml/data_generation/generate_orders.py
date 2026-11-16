@@ -17,7 +17,7 @@ waiting orders are retried every day after deliveries, urgent ones first, then t
 oldest. Some customers cancel, more often when they have been waiting a long time.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -25,7 +25,17 @@ from typing import Any
 
 import numpy as np
 
-from app.models import Order, OrderItem, OrderStatusHistory
+from app.models import (
+    Order,
+    OrderItem,
+    OrderStatusHistory,
+    PackingTask,
+    PickingTask,
+    Return,
+    ReturnItem,
+    Shipment,
+    ShipmentEvent,
+)
 from app.services.order_service import can_transition
 from data_generation.context import CustomerInfo, GenerationContext
 from data_generation.patterns import (
@@ -69,6 +79,7 @@ class SimLine:
     packed: int = 0
     shipped: int = 0
     returned: int = 0
+    id: int = 0  # set by the order book
 
     @property
     def missing(self) -> int:
@@ -95,6 +106,14 @@ class SimOrder:
     cancel_reason: str | None = None
     reservation_ids: list[int] = field(default_factory=list)
     waiting_since: date | None = None
+    # Fulfillment (Step 5): rows written together with the order.
+    picking_tasks: list[dict[str, Any]] = field(default_factory=list)
+    packing: dict[str, Any] | None = None
+    shipment: dict[str, Any] | None = None
+    events: list[dict[str, Any]] = field(default_factory=list)
+    returns: list[dict[str, Any]] = field(default_factory=list)
+    pending_return: list[tuple[SimLine, int]] = field(default_factory=list)  # (line, units)
+    carrier_code: str | None = None
 
     @property
     def units(self) -> int:
@@ -122,6 +141,10 @@ class OrderBook:
         self._finished: list[SimOrder] = []
         self._sequence: dict[int, int] = {}
         self.count = 0
+        self.line_count = 0
+        # Called before orders are written (the stock ledger writes the reservations
+        # their picking tasks point to).
+        self.before_write: Callable[[], None] | None = None
 
     def new_order(
         self,
@@ -145,6 +168,9 @@ class OrderBook:
             requested_delivery_date=requested,
             updated=when,
         )
+        for line in lines:
+            self.line_count += 1
+            line.id = self.line_count
         order.history.append((None, "created", when, None))
         self.open[order.id] = order
         return order
@@ -185,6 +211,8 @@ class OrderBook:
         self._write(sorted(self.open.values(), key=lambda o: o.id))
 
     def _write(self, orders: list[SimOrder]) -> None:
+        if self.before_write is not None:
+            self.before_write()
         writer = self.ctx.writer
         writer.insert(Order.__table__, (self._order_row(o) for o in orders))
         writer.insert(OrderItem.__table__, (row for o in orders for row in self._item_rows(o)))
@@ -202,6 +230,17 @@ class OrderBook:
                 for o in orders
                 for before, after, when, note in o.history
             ),
+        )
+        writer.insert(PickingTask.__table__, (t for o in orders for t in o.picking_tasks))
+        writer.insert(PackingTask.__table__, (o.packing for o in orders if o.packing))
+        writer.insert(Shipment.__table__, (o.shipment for o in orders if o.shipment))
+        writer.insert(ShipmentEvent.__table__, (e for o in orders for e in o.events))
+        writer.insert(
+            Return.__table__,
+            ({k: v for k, v in r.items() if k != "items"} for o in orders for r in o.returns),
+        )
+        writer.insert(
+            ReturnItem.__table__, (i for o in orders for r in o.returns for i in r["items"])
         )
 
     @staticmethod
@@ -237,6 +276,7 @@ class OrderBook:
     def _item_rows(o: SimOrder) -> Iterator[dict[str, Any]]:
         for line in o.lines:
             yield {
+                "id": line.id,
                 "order_id": o.id,
                 "line_number": line.line_number,
                 "product_id": line.product_id,

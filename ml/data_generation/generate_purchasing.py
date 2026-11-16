@@ -83,6 +83,7 @@ class PurchasingProcess:
         self.deliveries: dict[date, list[tuple[OpenPurchaseOrder, OrderLine, int]]] = {}
         self.suppliers = {s.id: s for s in ctx.suppliers}
         self._sequence: dict[int, int] = {}  # year -> last PO number
+        self.dock_waits = 0  # deliveries (partly) waiting at the dock for room
 
     # ------------------------------------------------------------------- policy
     def lead_days(self, supplier_id: int) -> int:
@@ -139,6 +140,7 @@ class PurchasingProcess:
             line.received += received
             self.on_order[(line.product_id, order.warehouse_id)] -= received
             if received < units:  # no room: the rest waits for the next working day
+                self.dock_waits += 1
                 later = next_working_day(day + timedelta(days=1))
                 self.deliveries.setdefault(later, []).append((order, line, units - received))
             if order.complete:

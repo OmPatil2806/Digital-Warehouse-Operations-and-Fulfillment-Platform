@@ -333,6 +333,12 @@ def _carriers(ctx: GenerationContext) -> None:
             }
         )
         ctx.carriers.append(
-            CarrierInfo(id=index + 1, code=code, transit_days=transit, reliability=reliability)
+            CarrierInfo(
+                id=index + 1,
+                code=code,
+                transit_days=transit,
+                reliability=reliability,
+                name=name,
+            )
         )
     ctx.writer.insert(Carrier.__table__, rows)

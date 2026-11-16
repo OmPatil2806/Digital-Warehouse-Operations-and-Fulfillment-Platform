@@ -1,4 +1,4 @@
-"""Shared fixtures: a small generated database (master data and layout only so far)."""
+"""Shared fixtures: generated databases (small, busier, and their parts) for the tests."""
 
 from collections.abc import Callable
 from datetime import date
@@ -7,15 +7,11 @@ from pathlib import Path
 import pytest
 from sqlalchemy import Engine
 
+from data_generation import pipeline
 from data_generation.config import get_config
 from data_generation.context import GenerationContext
-from data_generation.database import BatchWriter, prepare_database
-from data_generation.generate_fulfillment import FulfillmentProcess, HousekeepingProcess
-from data_generation.generate_master_data import generate_master_data
 from data_generation.generate_orders import OrderBook, OrdersProcess
 from data_generation.generate_purchasing import PurchasingProcess
-from data_generation.generate_shipments import ShipmentsProcess
-from data_generation.generate_warehouse_layout import generate_warehouse_layout
 from data_generation.patterns import demand_rate, sample_units
 from data_generation.simulation import Simulation, at
 
@@ -23,12 +19,8 @@ END = date(2026, 11, 10)
 
 
 def build(path: Path, size: str = "small", **overrides: int) -> tuple[GenerationContext, Engine]:
-    config = get_config(size, end_date=END, **overrides)
-    engine = prepare_database(path)
-    ctx = GenerationContext(config=config, writer=BatchWriter(engine, config.batch_size))
-    generate_master_data(ctx)
-    generate_warehouse_layout(ctx)
-    return ctx, engine
+    ctx = pipeline.build(get_config(size, end_date=END, **overrides), path)
+    return ctx, ctx.writer.engine
 
 
 @pytest.fixture()
@@ -99,29 +91,9 @@ def simulator() -> Callable[..., tuple[GenerationContext, Engine, dict]]:
 
 
 def simulate_orders(path: Path, **overrides: int) -> tuple[GenerationContext, Engine, dict]:
+    """The whole two-year simulation, exactly as scripts/generate_data.py runs it."""
     ctx, engine = build(path, **overrides)
-    sim = Simulation(ctx)
-    book = OrderBook(ctx)
-    purchasing = PurchasingProcess(ctx)
-    orders = OrdersProcess(ctx, book)
-    shipping = ShipmentsProcess(ctx, book)
-    fulfillment = FulfillmentProcess(ctx, book, shipping)
-    housekeeping = HousekeepingProcess(ctx)
-    sim.run([purchasing, shipping, orders, fulfillment, housekeeping])
-    book.finish()
-    return (
-        ctx,
-        engine,
-        {
-            "sim": sim,
-            "book": book,
-            "orders": orders,
-            "purchasing": purchasing,
-            "shipping": shipping,
-            "fulfillment": fulfillment,
-            "housekeeping": housekeeping,
-        },
-    )
+    return ctx, engine, pipeline.simulate(ctx)
 
 
 @pytest.fixture(scope="session")

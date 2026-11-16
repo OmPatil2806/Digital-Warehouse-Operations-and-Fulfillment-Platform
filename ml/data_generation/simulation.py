@@ -1,19 +1,21 @@
 """The day-by-day simulation: the warehouse's two-year history, one day at a time.
 
-Each stage (purchasing now; orders, fulfillment and shipments in the next steps) is a
-*process* with three hooks. Every simulated day the engine calls the processes in a
-fixed order, so goods received in the morning can be picked for orders the same day::
+Each stage is a *process* with three hooks. Every simulated day the engine calls the
+processes in a fixed order (see data_generation.pipeline), so goods received in the
+morning can be picked for orders the same day::
 
     for day in history:
-        purchasing.on_day   (deliveries arrive, stock is reviewed and reordered)
-        orders.on_day       (Step 4)
-        fulfillment.on_day  (Step 5)
+        purchasing.on_day     (deliveries arrive, stock is reviewed and reordered)
+        shipping.on_day       (parcels move, are delivered or come back)
+        orders.on_day         (new orders reserve stock, waiting orders retry)
+        fulfillment.on_day    (picking, packing, hand-over to the carrier)
+        housekeeping.on_day   (weekly disposal of damaged goods, returns to storage)
 
 The stock lives in one shared ``StockLedger``; what customers ordered per product and
 warehouse is remembered by the ``DemandTracker`` (the purchasing policy uses it).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 
@@ -90,13 +92,21 @@ class Simulation:
         start = self.ctx.config.start_date
         return [start + timedelta(days=i) for i in range(self.ctx.config.days)]
 
-    def run(self, processes: Sequence[Process]) -> None:
+    def run(
+        self,
+        processes: Sequence[Process],
+        *,
+        after_day: Callable[[date, int], None] | None = None,
+    ) -> None:
+        """Simulate every day; `after_day(day, day_index)` reports progress."""
         for process in processes:
             process.on_start(self)
         for day_index, day in enumerate(self.days):
             self.demand.start_day(day_index)
             for process in processes:
                 process.on_day(self, day, day_index)
+            if after_day is not None:
+                after_day(day, day_index)
         for process in processes:
             process.on_finish(self)
         self.ledger.finish()

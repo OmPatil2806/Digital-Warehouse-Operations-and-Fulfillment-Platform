@@ -114,6 +114,10 @@ DAMAGE = {
         "UPDATE stock_reservations SET status = 'released' WHERE id = "
         "(SELECT MIN(id) FROM stock_reservations WHERE status = 'active')",
     ),
+    "Stock movements and holds point to existing documents": (
+        "DELETE FROM orders WHERE id = (SELECT MAX(reference_id) FROM stock_reservations "
+        "WHERE reference_type = 'order')",
+    ),
     "Order lines: shipped <= packed <= picked <= ordered": (
         "UPDATE order_items SET quantity_returned = quantity_shipped + 1 WHERE id = "
         "(SELECT MIN(id) FROM order_items WHERE quantity_shipped > 0)",

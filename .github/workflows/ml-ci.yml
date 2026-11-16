@@ -6,12 +6,16 @@ on:
     paths:
       - "ml/**"
       - "backend/**"
+      - "scripts/generate_data.py"
+      - "scripts/seed_database.py"
       - ".github/workflows/ml-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "ml/**"
       - "backend/**"
+      - "scripts/generate_data.py"
+      - "scripts/seed_database.py"
       - ".github/workflows/ml-ci.yml"
   workflow_dispatch:
 
@@ -58,3 +62,8 @@ jobs:
 
       - name: Run tests (Pytest)
         run: pytest -v
+
+      - name: Generate and validate the small dataset
+        run: |
+          python ../scripts/generate_data.py --size small --database "$RUNNER_TEMP/synthetic.db"
+          cat "$RUNNER_TEMP/synthetic_validation.md" >> "$GITHUB_STEP_SUMMARY"

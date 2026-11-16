@@ -23,6 +23,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import combinations
+from math import exp
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,8 @@ PATTERN_MIN_ORDERS = 10_000
 ORDER_TOLERANCE = 0.10  # generated orders within 10 % of the target
 MAX_WAREHOUSE_FILL = 0.90  # share of storage volume in use at the end
 BASKET_SAMPLE = 50_000  # most recent orders used for the basket check
+INTERMITTENT_MIN_LINES_PER_DAY = 0.3  # products sold often enough to judge
+INTERMITTENT_DAY_SHARE = 0.6  # "in bursts": on < 60 % of the days steady sales would give
 
 # Stored as integers of the smallest unit (app.database.types.ScaledDecimal)
 KG = 1_000.0  # weight_kg: grams
@@ -50,6 +53,15 @@ BIN_ZONE = (
 LATE = "date(s.delivered_at) > s.expected_delivery_date"
 
 PASS, FAIL, SKIP = "pass", "fail", "skip"
+# reference_type of a stock movement or hold -> the table of that document
+REFERENCED = {
+    "order": "orders",
+    "return": "returns",
+    "reservation": "stock_reservations",
+    "transfer": "stock_transfers",
+    "adjustment": "stock_adjustments",
+    "cycle_count": "cycle_counts",
+}
 
 
 @dataclass(frozen=True)
@@ -110,6 +122,16 @@ class ValidationReport:
                         f"| {check.expected} |"
                     )
         return "\n".join(lines) + "\n"
+
+
+def _dangling(table: str) -> str:
+    """Rows of `table` whose reference_type/reference_id names a missing document."""
+    missing = " OR ".join(
+        f"(x.reference_type = '{kind}' AND NOT EXISTS "
+        f"(SELECT 1 FROM {target} WHERE id = x.reference_id))"
+        for kind, target in REFERENCED.items()
+    )
+    return f"(SELECT COUNT(*) FROM {table} x WHERE {missing})"
 
 
 class _Validator:
@@ -187,6 +209,13 @@ class _Validator:
             "SUM(quantity) q FROM stock_reservations WHERE status = 'active' GROUP BY 1, 2) a "
             "ON a.product_id = i.product_id AND a.bin_id = i.bin_id "
             "WHERE i.quantity_reserved != COALESCE(a.q, 0)",
+        )
+        self.none(
+            "Stock movements and holds point to existing documents",
+            "SELECT "
+            + " + ".join(
+                _dangling(table) for table in ("inventory_movements", "stock_reservations")
+            ),
         )
         self.none(
             "Order lines: shipped <= packed <= picked <= ordered",
@@ -384,17 +413,26 @@ class _Validator:
         self._add(share >= 0.5, f"{share:.0%} of units", ">= 50 %")
 
     def _intermittent(self) -> None:
+        """Lumpy demand: a product sells on far fewer days than steady (Poisson) sales of
+        the same volume would give. Only products with enough lines can show it."""
         days = self.one("SELECT COUNT(DISTINCT date(created_at)) FROM orders")
-        products = self.one("SELECT COUNT(*) FROM products")
-        rare = self.one(
-            "SELECT COUNT(*) FROM (SELECT oi.product_id FROM order_items oi "
-            "JOIN orders o ON o.id = oi.order_id GROUP BY 1 "
-            f"HAVING COUNT(DISTINCT date(o.created_at)) < {days} * 0.3)"
+        sales = [
+            (lines, sale_days)
+            for lines, sale_days in self.rows(
+                "SELECT COUNT(*), COUNT(DISTINCT date(o.created_at)) FROM order_items oi "
+                "JOIN orders o ON o.id = oi.order_id GROUP BY oi.product_id"
+            )
+            if lines / days >= INTERMITTENT_MIN_LINES_PER_DAY
+        ]
+        lumpy = sum(
+            sale_days < INTERMITTENT_DAY_SHARE * days * (1 - exp(-lines / days))
+            for lines, sale_days in sales
         )
-        rare += products - self.one("SELECT COUNT(DISTINCT product_id) FROM order_items")
-        share = rare / products
+        share = lumpy / max(1, len(sales))
         self._add(
-            0.05 <= share <= 0.6, f"{share:.0%} of products sell on < 30 % of days", "5 - 60 %"
+            0.05 <= share <= 0.4,
+            f"{share:.0%} of {len(sales):,} regularly sold products sell in bursts",
+            "5 - 40 %",
         )
 
     def _baskets(self) -> None:

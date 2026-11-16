@@ -2,8 +2,8 @@
 
 - Database: `database/warehouse_synthetic.db` (full size, seed 20261111, history to 2026-11-10)
 - Size configuration: full
-- Checked at: 2026-11-16 10:40 UTC
-- Result: **PASSED**: 48 passed, 0 failed, 0 skipped
+- Checked at: 2026-11-16 11:07 UTC
+- Result: **PASSED**: 49 passed, 0 failed, 0 skipped
 
 ## Integrity
 
@@ -15,6 +15,7 @@
 | Stock equals the sum of its movements | ✅ pass | 0 | 0 |
 | Bins within weight and volume limits | ✅ pass | 0 | 0 |
 | Active reservations match reserved stock | ✅ pass | 0 | 0 |
+| Stock movements and holds point to existing documents | ✅ pass | 0 | 0 |
 | Order lines: shipped <= packed <= picked <= ordered | ✅ pass | 0 | 0 |
 | Order status matches its latest history entry | ✅ pass | 0 | 0 |
 | Shipped orders have one shipment and the right dates | ✅ pass | 0 | 0 |
@@ -52,7 +53,7 @@
 | Holiday peak in November and December | ✅ pass | 1.28x per day | >= 1.15x |
 | Growth: second year above the first | ✅ pass | 1.09x per day | > 1.0x |
 | Fast movers: top 20 % of products | ✅ pass | 59% of units | >= 50 % |
-| Intermittent demand | ✅ pass | 45% of products sell on < 30 % of days | 5 - 60 % |
+| Intermittent demand | ✅ pass | 11% of 1,379 regularly sold products sell in bursts | 5 - 40 % |
 | Products bought together (baskets) | ✅ pass | 572 product pairs with lift > 3 | >= 5 |
 | Supplier lead times differ | ✅ pass | 2.3 to 30.8 days (13.3x) | >= 1.5x between suppliers |
 | Suppliers less reliable in peak season | ✅ pass | 39% late vs 25% | peak > rest |

@@ -388,7 +388,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
-- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`) 🚧 *in progress: patterns, master data, layout, day-by-day simulation with purchasing, and two years of customer orders, picking, packing, shipping, delays and returns, and dataset validation (integrity, volume, patterns) done; one-command generation script next*
+- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`) 🚧 *in progress: patterns, master data, layout, day-by-day simulation with purchasing, and two years of customer orders, picking, packing, shipping, delays and returns, dataset validation (integrity, volume, patterns), and one command (`scripts/generate_data.py`) to generate, load and validate it, checked in CI, done; documentation and release next*
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
@@ -443,6 +443,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   └── requirements.txt      # backend packages + numpy
 ├── scripts/
 │   ├── create_admin.py       # create the first administrator
+│   ├── generate_data.py      # generate, load and validate the two-year synthetic dataset
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)

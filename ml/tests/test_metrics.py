@@ -123,6 +123,15 @@ def test_cluster_stability_ignores_label_names() -> None:
         m.cluster_stability([[0, 1]])
 
 
+def test_rank_correlation_by_hand() -> None:
+    assert m.rank_correlation([1, 2, 3], [10, 20, 35]) == pytest.approx(1.0)
+    assert m.rank_correlation([1, 2, 3], [3, 2, 1]) == pytest.approx(-1.0)
+    # ranks (1, 2, 3, 4) vs (2, 1, 4, 3): 1 - 6 * (1+1+1+1) / (4 * 15) = 0.6
+    assert m.rank_correlation([1, 2, 3, 4], [5, 1, 9, 7]) == pytest.approx(0.6)
+    assert m.rank_correlation([0, 0, 1], [1, 2, 3]) > 0  # ties share ranks
+    assert m.rank_correlation([1, 1, 1], [1, 2, 3]) == 0.0
+
+
 # ----------------------------------------------------------------------- slotting
 def test_distance_reduction() -> None:
     assert m.distance_reduction([10, 20], [5, 20]) == pytest.approx(5 / 30)

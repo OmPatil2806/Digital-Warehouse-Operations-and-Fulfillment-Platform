@@ -73,9 +73,20 @@ class StockHistory:
         return self.first + timedelta(days=index)
 
 
-def _grid(frame: pd.DataFrame, value: str, series: pd.MultiIndex, first: date, days: int):
-    """(series, days) matrix of a per-day value (missing days 0)."""
+def _grid(
+    frame: pd.DataFrame,
+    value: str,
+    series: pd.MultiIndex,
+    first: date,
+    days: int,
+    *,
+    late_to_last_day: bool = False,
+):
+    """(series, days) matrix of a per-day value (missing days 0). With `late_to_last_day`,
+    values after the last day count on the last day (stock moves just after midnight)."""
     offsets = (pd.to_datetime(frame["day"]) - pd.Timestamp(first)).dt.days.to_numpy()
+    if late_to_last_day:
+        offsets = np.minimum(offsets, days - 1)
     rows = series.get_indexer(pd.MultiIndex.from_arrays([frame["product_id"], frame["wh"]]))
     keep = (rows >= 0) & (offsets >= 0) & (offsets < days)
     grid = np.zeros((len(series), days), dtype="float32")
@@ -108,7 +119,9 @@ def build_stock_history(engine: Engine, first: date, last: date) -> StockHistory
     product_ids = series.get_level_values(0).to_numpy()
     warehouse_ids = series.get_level_values(1).to_numpy()
 
-    available = np.cumsum(_grid(moves, "change", series, first, days), axis=1)
+    available = np.cumsum(
+        _grid(moves, "change", series, first, days, late_to_last_day=True), axis=1
+    )
     # Opening stock comes in on the first morning; later receipts are purchase deliveries.
     receipts = moves[(moves.movement_type == "receipt") & (moves.reason != "Opening stock")]
     ordered = read_frame(

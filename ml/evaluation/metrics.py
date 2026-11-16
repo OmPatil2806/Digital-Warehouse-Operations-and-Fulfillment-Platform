@@ -10,7 +10,7 @@ way. Every function is tested on small examples whose answers are worked out by 
 | Delay prediction        | pr_auc, brier), expected_calibration_error,                  |
 |                         | calibration_table                                             |
 | Movement classification | clustering_metrics (silhouette, davies_bouldin),              |
-|                         | cluster_stability                                             |
+|                         | cluster_stability, rank_correlation                           |
 | Slotting                | distance_reduction                                            |
 | Recommendation          | precision_at_k, recall_at_k, hit_rate_at_k, ndcg_at_k,        |
 |                         | catalogue_coverage, ranking_metrics                           |
@@ -21,6 +21,7 @@ from math import log2
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.stats import rankdata
 from sklearn.metrics import (
     adjusted_rand_score,
     average_precision_score,
@@ -199,6 +200,16 @@ def clustering_metrics(features: ArrayLike, labels: ArrayLike) -> dict[str, floa
         "silhouette": float(silhouette_score(x, groups)),
         "davies_bouldin": float(davies_bouldin_score(x, groups)),
     }
+
+
+def rank_correlation(a: ArrayLike, b: ArrayLike) -> float:
+    """Spearman's rank correlation (-1..1): do higher values of `a` go with higher `b`?
+    Ties get their average rank. 0 when one side is constant."""
+    x, y = _pair(a, b)
+    rank_x, rank_y = rankdata(x), rankdata(y)
+    if rank_x.std() == 0 or rank_y.std() == 0:
+        return 0.0
+    return float(np.corrcoef(rank_x, rank_y)[0, 1])
 
 
 def cluster_stability(runs: Sequence[ArrayLike]) -> float:

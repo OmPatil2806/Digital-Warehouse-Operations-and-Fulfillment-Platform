@@ -1,0 +1,41 @@
+# Movement classification: fast, medium and slow movers. The ABC baseline needs no
+# settings; each method here learns 3 groups from the products' movement features.
+
+features:
+  recent_days: 90 # classes are given from the most recent days' movement
+  stability_runs: 3 # each method is trained with this many seeds to measure stability
+  # How fast and how regularly a product moves. Trend, order size and daily noise are
+  # left out: with them the groups follow noise and change from seed to seed.
+  columns:
+    - log_lines_per_day
+    - log_units_per_day
+    - sale_day_share
+    - log_mean_gap_days
+    - log_cv_weekly
+
+models:
+  autoencoder_kmeans:
+    hidden: [16, 8]
+    latent: 3
+    clusters: 3
+    epochs: 150
+    batch_size: 64
+    learning_rate: 0.005
+  vae_kmeans:
+    hidden: [16, 8]
+    latent: 3
+    clusters: 3
+    epochs: 150
+    batch_size: 64
+    learning_rate: 0.005
+    beta: 0.1
+  dec:
+    hidden: [16, 8]
+    latent: 3
+    clusters: 3
+    pretrain_epochs: 100
+    batch_size: 64
+    learning_rate: 0.005
+    rounds: 20
+    steps_per_round: 10
+    cluster_learning_rate: 0.001

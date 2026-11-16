@@ -49,14 +49,15 @@ def read_frame(engine: Engine, sql: str, *, dates: tuple[str, ...] = ()) -> pd.D
 
 
 def history_range(engine: Engine) -> tuple[date, date]:
-    """First and last day with any activity (orders or stock movements, e.g. the opening
-    stock that arrives before the first order)."""
+    """The simulated days: from the first activity (the opening stock arrives before the
+    first order) to the last day with orders or supplier deliveries. Stock moves of the
+    last evening's orders that fall just after midnight do not add a day."""
     frame = read_frame(
         engine,
         "SELECT MIN((SELECT MIN(date(created_at)) FROM orders), "
-        "(SELECT COALESCE(MIN(date(created_at)), '9999') FROM inventory_movements)) AS first, MAX("
-        "(SELECT MAX(date(created_at)) FROM orders), "
-        "(SELECT COALESCE(MAX(date(created_at)), '') FROM inventory_movements)) AS last",
+        "(SELECT COALESCE(MIN(date(created_at)), '9999') FROM inventory_movements)) AS first, "
+        "MAX((SELECT MAX(date(created_at)) FROM orders), (SELECT COALESCE(MAX(date(created_at)),"
+        " '') FROM inventory_movements WHERE movement_type = 'receipt')) AS last",
     )
     first, last = frame.iloc[0]
     if first is None:

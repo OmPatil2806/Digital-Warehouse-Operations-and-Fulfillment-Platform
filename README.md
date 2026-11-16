@@ -3,7 +3,7 @@
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
 [![ML CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.6.0-blue)
+![Version](https://img.shields.io/badge/version-v0.7.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -13,7 +13,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 6 (dashboards & reporting) is complete: `v0.6.0`.** See the [Roadmap](#roadmap).
+> **Phase 7 (synthetic data platform) is complete: `v0.7.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -352,6 +352,100 @@ All take `date_from` and `date_to` (ISO dates). Customers receive 403.
 
 ---
 
+## Synthetic Data
+
+Real warehouse data is not available, so a generator creates a large, relationally consistent **two-year history** (section 11 of the project document). It is not random rows: a day-by-day simulation runs the warehouse with the same rules as the application (reservations, picking, capacity limits, status transitions), and business patterns are built in on purpose so the ML models in Phase 8 have something real to learn, plus controlled noise.
+
+### Generate it
+
+From the project root, with the virtual environment active and `ml/requirements.txt` installed:
+
+```bash
+python scripts/generate_data.py                          # small: 500 orders, a few seconds
+python scripts/generate_data.py --size medium            # 50,000 orders, about 1-2 minutes
+python scripts/generate_data.py --size full --replace    # 500,000 orders, about 20 minutes
+```
+
+| Option | Meaning |
+|--------|---------|
+| `--size` | `small` (development and CI), `medium`, `full` (analytics and ML training) |
+| `--seed` | random seed (default `20261111`): the same size, seed and end date always give the same data |
+| `--end-date` | last day of the history, `YYYY-MM-DD` (default: today) |
+| `--database` | the SQLite file (default `database/warehouse_synthetic.db`, not committed) |
+| `--replace` | delete an existing file first (otherwise it is never overwritten) |
+| `--no-demo-users` | do not add the demo logins (they are only added in development anyway) |
+
+The command prints one progress line per simulated month and runs five stages: master data and warehouse layout → two years day by day → the application's alerts on the last day (low stock, bins over capacity, delayed shipments, overdue purchase orders) → demo logins → validation. It ends with exit code 1 if any validation check fails.
+
+To explore the data in the web app, point the backend at it in `.env` and log in with a demo account (e.g. `manager@example.com` / `Demo-pass-123`):
+
+```
+DATABASE_URL=sqlite:///./database/warehouse_synthetic.db
+```
+
+### Sizes
+
+| | small | medium | full |
+|---|---:|---:|---:|
+| Warehouses / zones / racks / bins | 1 / 4 / 20 / 300 | 1 / 6 / 60 / 1,440 | 3 / 18 / 180 / 5,760 |
+| Products / suppliers / customers | 50 / 10 / 200 | 500 / 30 / 2,000 | 2,000 / 100 / 10,000 |
+| Orders (two years) | ~500 | ~50,000 | ~500,000 |
+| Generation time (measured) | 3 s | 72 s | 18 min |
+
+The full dataset has 499,179 orders with 1.26 million order lines, 1.37 million picking tasks, 489,248 shipments with 2.0 million tracking events, 42,045 returns, 67,923 purchase orders and 3.3 million inventory movements (about 2.6 GB). Daily demand per product (2,000 products × 730 days) is derived from the order lines in Phase 8.
+
+### How it is generated
+
+Generation follows the order of the project document, in `ml/data_generation/` (`pipeline.py` runs everything):
+
+1. **Master data** (`generate_master_data.py`): categories, products with demand profiles, suppliers with their true reliability, customers, carriers.
+2. **Warehouse layout** (`generate_warehouse_layout.py`): warehouses > zones > racks > shelves > bins with weight and volume limits.
+3. **Two years, one day at a time** (`simulation.py`), each day in a fixed order:
+   - **Purchasing** (`generate_purchasing.py`): opening stock; a simple reorder-point policy that ignores seasons and promotions on purpose (room for the ML reorder model); deliveries after the supplier's real lead time, waiting at the dock when bins are full.
+   - **Shipping and returns** (`generate_shipments.py`): carriers, tracking events, delays, deliveries, returns inspected and put back into stock.
+   - **Orders** (`generate_orders.py`): daily order count from the demand patterns, stock reserved like the application does, backorders retried after deliveries.
+   - **Fulfillment** (`generate_fulfillment.py`): picking routes, short picks with write-offs and cycle counts, packing into parcels, a daily cut-off and picking capacity.
+   - **Housekeeping**: weekly disposal of damaged goods and returns moved back to storage.
+4. **Alerts** as the application would show them on the last day.
+
+Rows are written in batches while the simulation runs, so memory stays manageable on a local PC.
+
+### Built-in patterns (measured on the full dataset)
+
+| Area | Pattern | Full dataset |
+|------|---------|-------------:|
+| Demand | weekdays busier than weekends | 1.90× orders per day |
+| | November-December holiday peak | 1.28× |
+| | growth: second year above the first | 1.09× |
+| | fast movers: the top 20 % of products | 59 % of units |
+| | intermittent ("lumpy") demand | 11 % of regularly sold products sell in bursts |
+| | promotions | 1-3 per product and year (not for lumpy products), 1.5-3× demand |
+| Baskets | products bought together (e.g. laptop with mouse, bag, dock) | 572 product pairs with lift > 3 |
+| Suppliers | different lead times | 2.3 to 30.8 days on average |
+| | less reliable in peak season | 39 % late vs 25 % |
+| Delays | late deliveries overall | 9.3 % |
+| | large orders (> 10 units) | 17.6 % vs 8.9 % late |
+| | orders that waited for stock | 30.3 % vs 8.4 % late |
+| | December | 17.6 % vs 8.0 % late |
+| | carriers differ in reliability | 7.4 % to 13.8 % late |
+| Warehouse | heavy goods (≥ 8 kg) on the lowest shelf | 58 % vs 24 % of light goods |
+| | fast movers stored nearer to packing | 26 m vs 47 m picking distance |
+| | bin capacity limits never exceeded | 0 bins over their limits |
+| Noise | returns | 2.6 % of shipped units, 36 % of returned lines damaged |
+| | short picks and stock corrections | 0.41 % of picking tasks, 22,988 adjustments |
+
+### Validation
+
+`ml/data_validation/validate_dataset.py` checks a generated database and writes a Markdown report (the generate command runs it automatically; it can also run alone: `cd ml` then `python -m data_validation.validate_dataset --size full`):
+
+- **Integrity**: no orphan records, no negative stock, stock equal to the sum of its movement history, bins within their limits, reservations matching reserved stock, movements pointing to existing documents, order lines, statuses, shipments, cancellations, returns, purchase orders and picking tasks consistent.
+- **Volume**: the counts of the size configuration (warehouses, bins, products, customers, orders ± 10 %, two years of history).
+- **Patterns**: the 19 patterns above (skipped below 10,000 orders, where they cannot be measured reliably).
+
+The full dataset passes all 49 checks: see the [validation report](ml/data_validation/reports/full_dataset.md). CI generates and validates the small dataset on every push.
+
+---
+
 ## Architecture
 
 ```
@@ -388,7 +482,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 4: Inventory operations**: traceable stock at bin level (`v0.4.0`) ✅
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
-- [ ] **Phase 7: Synthetic data platform**: large, realistic dataset (`v0.7.0`) 🚧 *in progress: patterns, master data, layout, day-by-day simulation with purchasing, and two years of customer orders, picking, packing, shipping, delays and returns, dataset validation (integrity, volume, patterns), and one command (`scripts/generate_data.py`) to generate, load and validate it, checked in CI, done; documentation and release next*
+- [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`)
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
@@ -543,6 +637,14 @@ ruff check .       # lint
 black --check .    # format check (use `black .` to auto-format)
 ```
 
+### Data generation (from `ml/`)
+
+```bash
+pytest -v          # run tests (generator, validation, the generate command)
+ruff check .       # lint
+black --check .    # format check
+```
+
 ### Frontend (from `frontend/`)
 
 ```bash
@@ -561,6 +663,7 @@ Every push and pull request to `main` runs **GitHub Actions**:
 |----------|-----------|-------|
 | Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest → Vite build |
+| ML CI | `ml/**`, `backend/**` or the data scripts change | Ruff → Black → Pytest → generate and validate the small dataset |
 
 ---
 

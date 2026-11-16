@@ -1,6 +1,6 @@
 [project]
 name = "warehouse-ml"
-version = "0.6.0"
+version = "0.7.0"
 description = "Synthetic data generation and machine learning for the Digital Warehouse platform"
 requires-python = ">=3.12"
 

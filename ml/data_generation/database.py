@@ -41,11 +41,16 @@ def prepare_database(path: Path, *, replace: bool = False) -> Engine:
             )
         path.unlink()
     path.parent.mkdir(parents=True, exist_ok=True)
+    upgrade_database(path)
+    return build_engine(sqlite_url(path))
+
+
+def upgrade_database(path: Path) -> None:
+    """Apply the application's migrations (adds tables a newer version needs; data stays)."""
     config = Config()
     config.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
     config.set_main_option("sqlalchemy.url", sqlite_url(path))
     command.upgrade(config, "head")
-    return build_engine(sqlite_url(path))
 
 
 def batched(rows: Iterable[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:

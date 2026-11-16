@@ -14,6 +14,8 @@ from pathlib import Path  # noqa: E402
 import keras  # noqa: E402
 import tensorflow as tf  # noqa: E402
 
+tf.get_logger().setLevel("ERROR")  # no retracing chatter when predicting several sets
+
 ML_DIR = Path(__file__).resolve().parents[1]
 ARTIFACT_DIR = ML_DIR / "artifacts"
 

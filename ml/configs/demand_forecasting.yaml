@@ -1,0 +1,39 @@
+# Demand forecasting: daily units per product for the next 30 days, with a range.
+# Baselines (moving_average, seasonal_naive) need no settings; every neural model here
+# is trained, compared on the test period and the best one registered.
+
+features:
+  window: 56 # days of history the models see (8 weeks)
+  horizon: 30 # days forecast from each origin (7- and 14-day totals are part of it)
+  train_stride: 3 # a training window every 3 days per product
+  eval_stride: 7 # validation and test origins every 7 days
+  max_train_windows: 100000 # random sample of training windows (keeps training to minutes)
+
+training:
+  max_epochs: 20
+  batch_size: 512
+  patience: 3
+
+models:
+  lstm:
+    units: 32
+    hidden: 64
+    dropout: 0.1
+  gru:
+    units: 32
+    hidden: 64
+    dropout: 0.1
+  cnn_lstm:
+    filters: 32
+    kernel_size: 7
+    conv_layers: 2
+    pool: 2
+    units: 32
+    hidden: 64
+    dropout: 0.1
+  transformer:
+    width: 32
+    heads: 4
+    blocks: 2
+    hidden: 64
+    dropout: 0.1

@@ -9,6 +9,8 @@ models to compare with their hyperparameters::
     models:
       lstm: {units: 32, window: 28}
       gru: {units: 32, window: 28}
+    features:            # settings of the use case's feature tables
+      window: 56
 """
 
 from dataclasses import dataclass, field
@@ -35,6 +37,7 @@ class ExperimentConfig:
     learning_rate: float
     patience: int
     models: dict[str, dict[str, Any]] = field(default_factory=dict)
+    features: dict[str, Any] = field(default_factory=dict)  # use-case settings (window, ...)
 
     def model(self, name: str) -> dict[str, Any]:
         if name not in self.models:
@@ -83,6 +86,9 @@ def load_config(use_case: str, directory: Path = CONFIG_DIR) -> ExperimentConfig
     split = settings.get("split") or {}
     training = settings.get("training") or {}
     models = settings.get("models") or {}
+    features = settings.get("features") or {}
+    if not isinstance(features, dict):
+        raise ConfigError(f"{use_case}: features must be a mapping")
     if not isinstance(models, dict) or not all(
         isinstance(params or {}, dict) for params in models.values()
     ):
@@ -105,4 +111,5 @@ def load_config(use_case: str, directory: Path = CONFIG_DIR) -> ExperimentConfig
         learning_rate=float(learning_rate),
         patience=_positive_int(training, "patience", use_case),
         models={name: dict(params or {}) for name, params in models.items()},
+        features=dict(features),
     )

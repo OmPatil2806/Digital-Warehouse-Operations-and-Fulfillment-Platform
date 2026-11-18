@@ -14,12 +14,14 @@ const LEVELS: Record<RiskLevel, { tone: BadgeTone; label: string; Icon: typeof A
 export function RiskBadge({ level, probability }: { level: RiskLevel; probability?: number }) {
   const { tone, label, Icon } = LEVELS[level]
   return (
-    <Badge tone={tone}>
-      <Icon aria-hidden className="mr-1 h-3.5 w-3.5" />
-      {label}
-      {probability !== undefined && (
-        <span className="ml-1 tabular-nums">{formatProbability(probability)}</span>
-      )}
-    </Badge>
+    <span className="inline-block whitespace-nowrap">
+      <Badge tone={tone}>
+        <Icon aria-hidden className="mr-1 h-3.5 w-3.5" />
+        {label}
+        {probability !== undefined && (
+          <span className="ml-1 tabular-nums">{formatProbability(probability)}</span>
+        )}
+      </Badge>
+    </span>
   )
 }

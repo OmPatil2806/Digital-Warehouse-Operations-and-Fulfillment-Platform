@@ -65,7 +65,9 @@ export function ReorderTable({
               <td className="py-2 pr-3">
                 <RiskBadge level={item.priority} probability={item.probability} />
               </td>
-              <td className="py-2 pr-3 tabular-nums">{formatShortDate(item.reorder_date)}</td>
+              <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
+                {formatShortDate(item.reorder_date)}
+              </td>
               <td className="py-2 pr-3 text-right tabular-nums">{formatInteger(item.quantity)}</td>
               <td className="py-2 pr-3 text-xs text-slate-600">
                 {item.reasons.length ? item.reasons.join('; ') : '—'}

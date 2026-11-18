@@ -179,7 +179,8 @@ function SortIcon({ sort, field }: { sort?: string; field: string }) {
   return <ArrowUpDown size={12} className="opacity-40" aria-hidden="true" />
 }
 
-function PaginationBar({ offset, limit, total, onChange }: Pagination) {
+/** "Showing 1–25 of 80" with Previous / Next; also used by lists outside DataTable. */
+export function PaginationBar({ offset, limit, total, onChange }: Pagination) {
   if (total === 0) return null
   const from = offset + 1
   const to = Math.min(offset + limit, total)

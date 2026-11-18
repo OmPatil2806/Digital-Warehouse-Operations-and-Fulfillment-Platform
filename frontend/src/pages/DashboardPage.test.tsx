@@ -52,7 +52,8 @@ describe('DashboardPage', () => {
     expect(modules).not.toHaveTextContent('Users') // admin-only
     expect(modules).toHaveTextContent('Inventory')
     expect(modules).toHaveTextContent('Shipments')
-    expect(modules).toHaveTextContent('Phase 9')
+    expect(modules).toHaveTextContent('ML insightsAvailable') // ready since Phase 9
+    expect(modules).not.toHaveTextContent('Phase')
   })
 
   it('shows "Checking…" while the request is pending', () => {

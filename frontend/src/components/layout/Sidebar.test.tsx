@@ -95,6 +95,7 @@ describe('Sidebar', () => {
         'Shipments',
         'Alerts',
         'Reports',
+        'ML insights',
       ],
     ],
     ['customer', ['Dashboard', 'Orders', 'Shipments']],
@@ -118,6 +119,7 @@ describe('Sidebar', () => {
       'Shipments',
       'Alerts',
       'Reports',
+      'ML insights',
     ])
   })
 
@@ -129,7 +131,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Orders', { selector: 'p' })).toBeInTheDocument()
   })
 
-  it('ready pages are links; pages from later steps are disabled with a phase badge', () => {
+  it('ready pages are links', () => {
     const { nav } = renderSidebar('manager')
 
     const links = within(nav).getAllByRole('link')
@@ -145,12 +147,17 @@ describe('Sidebar', () => {
       ['Shipments', '/shipments'],
       ['Alerts', '/alerts'],
       ['Reports', '/reports'],
+      ['ML insights', '/ml-insights'],
     ])
+    expect(nav.querySelector('[aria-disabled="true"]')).toBeNull()
+  })
 
-    const insights = within(nav).getByText('ML insights').closest('[aria-disabled="true"]')
-    expect(insights).not.toBeNull()
-    expect(insights).toHaveAttribute('title', 'Coming in Phase 9')
-    expect(insights).toHaveTextContent('P9')
+  it('pages from later phases are disabled with a phase badge', () => {
+    const admin = renderSidebar('admin').nav
+    const settings = within(admin).getByText('Settings').closest('[aria-disabled="true"]')
+    expect(settings).not.toBeNull()
+    expect(settings).toHaveAttribute('title', 'Coming in Phase 10')
+    expect(settings).toHaveTextContent('P10')
   })
 
   it('keeps a section highlighted on its detail pages', () => {

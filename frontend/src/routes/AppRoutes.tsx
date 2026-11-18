@@ -26,6 +26,7 @@ const ShipmentsPage = lazy(() => import('../pages/ShipmentsPage'))
 const OrderDetailPage = lazy(() => import('../pages/OrderDetailPage'))
 const PurchaseOrdersPage = lazy(() => import('../pages/PurchaseOrdersPage'))
 const ReportsPage = lazy(() => import('../pages/ReportsPage'))
+const MLInsightsPage = lazy(() => import('../pages/MLInsightsPage'))
 const AuditLogPage = lazy(() => import('../pages/AuditLogPage'))
 
 /**
@@ -61,6 +62,7 @@ export function AppRoutes() {
             <Route path="/fulfillment" element={<FulfillmentPage />} />
             <Route path="/purchase-orders" element={<PurchaseOrdersPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/ml-insights" element={<MLInsightsPage />} />
           </Route>
 
           {/* Administrators only */}

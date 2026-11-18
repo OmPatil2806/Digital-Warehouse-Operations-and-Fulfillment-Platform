@@ -1,0 +1,19 @@
+# Slotting: one pick-face bin per product and warehouse. The ABC baseline needs no
+# settings; the suitability networks predict log(1 + seconds of picking per day) for
+# (product, bin) pairs and the shared optimizer builds the layout.
+
+features:
+  horizon: 28 # days of coming picks a training pair is labelled with
+  snapshot_every: 28 # training snapshots every 4 weeks of the training period
+  bins_per_product: 8 # random allowed bins per product and snapshot
+
+training:
+  max_epochs: 30
+  batch_size: 2048
+  patience: 4
+
+models:
+  dense_suitability:
+    units: [64, 64, 32]
+  wide_deep_suitability:
+    units: [64, 64, 32]

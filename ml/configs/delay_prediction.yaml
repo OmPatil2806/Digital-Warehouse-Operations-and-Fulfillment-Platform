@@ -1,0 +1,26 @@
+# Order-delay prediction: probability that a shipment arrives after its expected date,
+# scored at dispatch. The logistic-regression baseline needs no settings.
+
+features:
+  max_train_rows: 300000 # random sample of training shipments
+
+training:
+  max_epochs: 30
+  batch_size: 1024
+  patience: 4
+
+models:
+  dense:
+    units: [64, 32]
+    dropout: 0.1
+  wide_deep:
+    units: [64, 32]
+    dropout: 0.1
+  deep_cross:
+    cross_layers: 2
+    units: [64, 32]
+    dropout: 0.1
+  lstm_events:
+    lstm_units: 32
+    units: [64]
+    dropout: 0.1

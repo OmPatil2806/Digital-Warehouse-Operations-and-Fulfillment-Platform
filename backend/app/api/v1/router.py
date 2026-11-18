@@ -13,6 +13,7 @@ from app.api.v1 import (
     fulfillment,
     health,
     inventory,
+    ml_predictions,
     orders,
     products,
     purchase_orders,
@@ -42,3 +43,4 @@ api_router.include_router(shipments.router)
 api_router.include_router(returns.router)
 api_router.include_router(purchase_orders.router)
 api_router.include_router(dashboards.router)
+api_router.include_router(ml_predictions.router)

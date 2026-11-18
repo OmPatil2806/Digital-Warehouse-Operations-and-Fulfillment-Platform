@@ -1,0 +1,28 @@
+# Product recommendation: rank the catalogue for a basket (held-out product as target).
+# The frequently-bought-together baseline needs no settings.
+
+features:
+  max_train_examples: 400000 # random sample of (basket, held-out product) examples
+  eval_queries: 3000 # validation and test queries (one held-out product per basket)
+  negatives: 4 # random other products per positive for the pointwise models
+
+training:
+  max_epochs: 30
+  batch_size: 1024
+  patience: 3
+
+models:
+  ncf:
+    embedding: 32
+    units: [64, 32]
+  two_tower:
+    embedding: 32
+    hidden: 64
+    dim: 32
+  deep_cross:
+    embedding: 16
+    cross_layers: 2
+    units: [64, 32]
+  gru_sequential:
+    embedding: 32
+    gru_units: 64

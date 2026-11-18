@@ -204,3 +204,34 @@ def make_windows(
         products=p_idx,
         origins=o_idx,
     )
+
+
+def latest_windows(data: DemandData, *, window: int, horizon: int, scale: np.ndarray) -> Windows:
+    """Inference: every product's last `window` days, forecasting the `horizon` days after
+    the end of the history (their demand is unknown, so the targets are zeros)."""
+    origin = data.days
+    if origin - window < 0:
+        raise ValueError("not enough history for the window")
+    cal = calendar(data.first, data.days + horizon)
+    products = np.arange(len(data.product_ids))
+    past = origin + np.arange(-window, 0)
+    history = np.concatenate(
+        [
+            (data.units[:, past] / scale[:, None])[..., None],
+            data.promo[:, past][..., None],
+            np.broadcast_to(cal[past], (len(products), window, cal.shape[1])),
+        ],
+        axis=2,
+    ).astype("float32")
+    static = np.zeros((len(products), len(data.category_names) + 1), dtype="float32")
+    static[products, data.categories] = 1
+    static[:, -1] = np.log1p(scale)
+    return Windows(
+        history=history,
+        future=np.broadcast_to(cal[origin : origin + horizon], (len(products), horizon, 4)).copy(),
+        static=static,
+        target=np.zeros((len(products), horizon), "float32"),
+        scale=scale.astype("float32"),
+        products=products,
+        origins=np.full(len(products), origin),
+    )

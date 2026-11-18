@@ -8,6 +8,7 @@ on:
       - "backend/**"
       - "scripts/generate_data.py"
       - "scripts/train_models.py"
+      - "scripts/score_models.py"
       - "scripts/seed_database.py"
       - ".github/workflows/ml-ci.yml"
   pull_request:
@@ -17,6 +18,7 @@ on:
       - "backend/**"
       - "scripts/generate_data.py"
       - "scripts/train_models.py"
+      - "scripts/score_models.py"
       - "scripts/seed_database.py"
       - ".github/workflows/ml-ci.yml"
   workflow_dispatch:
@@ -75,3 +77,6 @@ jobs:
           python ../scripts/train_models.py --database "$RUNNER_TEMP/synthetic.db" --quick \
             --no-reports --overview "$RUNNER_TEMP/overview.md"
           cat "$RUNNER_TEMP/overview.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Score every use case with the selected models (smoke test)
+        run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db"

@@ -139,7 +139,10 @@ def _warehouse_fill(engine: Engine) -> pd.DataFrame:
     return moves[["wh", "day", "fill"]]
 
 
-def build_delay_set(engine: Engine) -> DelaySet:
+def build_delay_set(engine: Engine, *, on_the_way: bool = False) -> DelaySet:
+    """Delivered shipments with their outcome (training), or with `on_the_way` the
+    shipments not delivered yet (prediction; label NaN). The carrier history always uses
+    the delivered ones."""
     shipments = read_frame(
         engine,
         "SELECT s.order_id, s.carrier_id, c.code AS carrier, s.package_count, s.weight_kg, "
@@ -150,7 +153,7 @@ def build_delay_set(engine: Engine) -> DelaySet:
         "(SELECT COUNT(*) FROM order_items WHERE order_id = o.id) AS lines "
         "FROM shipments s JOIN orders o ON o.id = s.order_id JOIN carriers c "
         "ON c.id = s.carrier_id JOIN customers cu ON cu.id = o.customer_id "
-        "WHERE s.delivered_at IS NOT NULL ORDER BY s.shipped_at, s.order_id",
+        "ORDER BY s.shipped_at, s.order_id",
         dates=("shipped_at", "created_at", "confirmed_at"),
     )
     shipments["late"] = (shipments["delivered_day"] > shipments["expected_delivery_date"]).astype(
@@ -159,8 +162,8 @@ def build_delay_set(engine: Engine) -> DelaySet:
     history = read_frame(
         engine,
         "SELECT h.order_id, h.to_status, h.created_at FROM order_status_history h "
-        "JOIN shipments s ON s.order_id = h.order_id WHERE s.delivered_at IS NOT NULL "
-        "AND h.created_at <= s.shipped_at ORDER BY h.order_id, h.created_at, h.id",
+        "JOIN shipments s ON s.order_id = h.order_id "
+        "WHERE h.created_at <= s.shipped_at ORDER BY h.order_id, h.created_at, h.id",
         dates=("created_at",),
     )
     history = history[history["to_status"].isin(PRE_DISPATCH_STATUSES)]
@@ -238,13 +241,16 @@ def build_delay_set(engine: Engine) -> DelaySet:
     wide[np.arange(n), offset + waited_flag * len(PRIORITIES) + priority.to_numpy(int)] = 1
     wide[np.arange(n), offset + 2 * len(PRIORITIES) + band] = 1
 
-    return DelaySet(
+    delivered = shipments["delivered_day"].notna().to_numpy()
+    label = np.where(delivered, shipments["late"].to_numpy(), np.nan).astype("float32")
+    full = DelaySet(
         numeric=numeric,
         categorical=categorical,
         sequence=sequence,
         wide=wide,
-        label=shipments["late"].to_numpy("float32"),
+        label=label,
         shipped_day=pd.to_datetime(shipments["shipped_day"]).to_numpy("datetime64[D]"),
         order_ids=shipments["order_id"].to_numpy(),
         category_names=list(one_hot.columns),
     )
+    return full.subset(np.flatnonzero(~delivered if on_the_way else delivered))

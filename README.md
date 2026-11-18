@@ -523,7 +523,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
-- [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
+- [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`) 🚧 *in progress: prediction tables and the scoring command (`scripts/score_models.py`) done; ML API next*
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 
 ---
@@ -578,6 +578,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── training/             # data extraction, chronological splits, configs, Keras setup
 │   ├── evaluation/           # metrics for all six use cases; reports/ holds the model comparisons
 │   ├── registry/             # register trained models and select the best per use case
+│   ├── inference/            # predictors: the selected models score the latest data
 │   ├── artifacts/            # saved .keras models (created when training, not committed)
 │   ├── tests/                # Pytest tests of the generator and the ML code
 │   ├── pyproject.toml        # Ruff, Black and Pytest settings
@@ -586,6 +587,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── create_admin.py       # create the first administrator
 │   ├── generate_data.py      # generate, load and validate the two-year synthetic dataset
 │   ├── train_models.py       # train and compare the models of all six ML use cases
+│   ├── score_models.py       # score all use cases with the selected models into the prediction tables
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)

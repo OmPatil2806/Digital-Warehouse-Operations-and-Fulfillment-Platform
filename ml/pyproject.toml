@@ -17,7 +17,7 @@ target-version = "py312"
 select = ["E", "W", "F", "I", "B", "UP", "N", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "baselines", "data_generation", "data_validation", "evaluation", "feature_engineering", "models", "registry", "training"]
+known-first-party = ["app", "baselines", "data_generation", "data_validation", "evaluation", "feature_engineering", "inference", "models", "registry", "training"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

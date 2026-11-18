@@ -73,6 +73,14 @@ export function ReorderTable({
                 {item.reasons.length ? item.reasons.join('; ') : '—'}
               </td>
               <td className="py-2">
+                {item.purchase_order_id && (
+                  <Link
+                    to="/purchase-orders"
+                    className="mb-1 block text-xs text-blue-700 hover:underline"
+                  >
+                    Draft purchase order created
+                  </Link>
+                )}
                 <DecisionCell
                   decision={item}
                   canDecide={canDecide}

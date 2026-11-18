@@ -31,6 +31,7 @@ import {
 } from '../components/orders/orderFormat'
 import { InspectDialog, ReturnDialog } from '../components/shipments/ShipmentDialogs'
 import { RETURN_TONES } from '../components/shipments/shipmentFormat'
+import { OrderDelayRisk } from '../components/ml/OrderDelayRisk'
 import { useApiMutation } from '../hooks/useApiMutation'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
@@ -249,6 +250,8 @@ function OrderView({ order }: { order: Order }) {
           </div>
         )}
       </dl>
+
+      {warehouse && <OrderDelayRisk orderId={order.id} />}
 
       <section aria-labelledby="items-heading" className="space-y-3">
         <h2 id="items-heading" className="font-medium">

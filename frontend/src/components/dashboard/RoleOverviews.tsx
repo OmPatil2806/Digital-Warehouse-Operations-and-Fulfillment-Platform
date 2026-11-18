@@ -1,4 +1,4 @@
-import { BrainCircuit, ShoppingCart } from 'lucide-react'
+import { ShoppingCart } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { alertKeys, listAlerts } from '../../api/alertsApi'
@@ -32,6 +32,7 @@ import { SHIPMENT_TONES } from '../shipments/shipmentFormat'
 import { DateRangePicker } from './DateRangePicker'
 import { DEFAULT_RANGE, rangeParams, type DateRangeValue } from './dateRange'
 import { STOCK_STATUS } from './dashboardFormat'
+import { MLSummaryCards } from '../ml/MLSummaryCards'
 import { KpiCard } from './KpiCard'
 import { OrdersTrendChart } from './OrdersTrendChart'
 import { RecentAlerts } from './RecentAlerts'
@@ -180,21 +181,7 @@ export function ManagerOverview() {
         />
       </div>
 
-      <section
-        aria-labelledby="ml-heading"
-        className="flex items-start gap-3 rounded-xl border border-dashed border-slate-300 p-4"
-      >
-        <BrainCircuit size={20} className="mt-0.5 text-slate-400" aria-hidden="true" />
-        <div>
-          <h3 id="ml-heading" className="font-medium text-slate-700">
-            ML insights
-          </h3>
-          <p className="text-sm text-slate-500">
-            Forecast error, predicted stockouts and high-risk orders appear here once the models are
-            trained (Phases 8 and 9).
-          </p>
-        </div>
-      </section>
+      <MLSummaryCards />
     </div>
   )
 }

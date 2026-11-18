@@ -23,7 +23,7 @@ export function RecommendationList({
             <span className="w-5 text-right text-xs text-slate-400 tabular-nums">{item.rank}.</span>
             <Link
               to={`/products/${item.product.id}`}
-              className="font-medium text-blue-700 hover:underline"
+              className="font-medium whitespace-nowrap text-blue-700 hover:underline"
             >
               {item.product.sku}
             </Link>

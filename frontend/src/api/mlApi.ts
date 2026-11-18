@@ -3,6 +3,7 @@ import type {
   DelayRiskPage,
   DemandForecast,
   ListParams,
+  MLSummary,
   ModelSummary,
   MovementClass,
   MovementInfo,
@@ -22,6 +23,7 @@ import { apiClient } from './apiClient'
 export const mlKeys = {
   all: ['ml'] as const,
   models: ['ml', 'models'] as const,
+  summary: ['ml', 'summary'] as const,
   forecast: (productId: number) => ['ml', 'forecast', productId] as const,
   reorder: (params: object) => ['ml', 'reorder', params] as const,
   movement: (productId: number) => ['ml', 'movement', productId] as const,
@@ -39,6 +41,8 @@ async function get<T>(path: string, params?: object): Promise<T> {
 }
 
 export const getModels = () => get<ModelSummary[]>('models')
+
+export const getMlSummary = () => get<MLSummary>('summary')
 
 export const getDemandForecast = (productId: number) =>
   get<DemandForecast>(`demand-forecasts/${productId}`)

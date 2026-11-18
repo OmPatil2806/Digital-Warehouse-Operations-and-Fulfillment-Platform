@@ -111,8 +111,11 @@ export function ReorderPanel({ canDecide }: { canDecide: boolean }) {
     keepPrevious: true,
   })
   const decide = useApiMutation(decideReorder, {
-    invalidates: [mlKeys.all],
-    successMessage: (r) => `Reorder of ${r.product.sku} ${r.status}`,
+    invalidates: [mlKeys.all, ['purchase-orders']],
+    successMessage: (r) =>
+      r.purchase_order_id
+        ? `Reorder of ${r.product.sku} approved: draft purchase order created`
+        : `Reorder of ${r.product.sku} ${r.status}`,
   })
   return (
     <Panel

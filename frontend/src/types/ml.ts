@@ -149,3 +149,16 @@ export interface ListParams {
   offset?: number
   limit?: number
 }
+
+export interface MLSummary {
+  as_of: string | null
+  stockouts_high: number
+  stockouts_pending: number
+  orders_high_risk: number
+  orders_at_risk: number
+  orders_on_the_way: number
+  forecast_units_7_days: number
+  forecast_units_30_days: number
+  slotting_pending: number
+  slotting_seconds_saved_per_day: number
+}

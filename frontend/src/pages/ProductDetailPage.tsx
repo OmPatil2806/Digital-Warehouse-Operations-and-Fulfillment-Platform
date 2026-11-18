@@ -8,6 +8,7 @@ import { Button } from '../components/common/Button'
 import { ConfirmDialog } from '../components/common/ConfirmDialog'
 import { DataTable, type Column } from '../components/common/DataTable'
 import { DetailItem, PageHeader } from '../components/common/PageHeader'
+import { ProductMLPanel } from '../components/ml/ProductMLPanel'
 import { ProductStockPanel } from '../components/inventory/ProductStockPanel'
 import { ProductFormDialog } from '../components/products/ProductFormDialog'
 import { useApiMutation } from '../hooks/useApiMutation'
@@ -183,6 +184,8 @@ export default function ProductDetailPage() {
         </h2>
         <ProductStockPanel productId={id} />
       </section>
+
+      <ProductMLPanel productId={id} />
 
       <section aria-labelledby="suppliers-heading" className="space-y-3">
         <h2 id="suppliers-heading" className="font-medium">

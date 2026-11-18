@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
+from app.models.catalog import SupplierProduct
 from app.models.ml import MetricSplit, ModelMetric, ModelStatus, ModelVersion, UseCase
 from app.models.ml_results import (
     DelayPrediction,
@@ -20,6 +21,7 @@ from app.models.ml_results import (
     SlottingRecommendation,
 )
 from app.models.order import Order
+from app.models.purchase import PurchaseOrder
 from app.models.shipment import Shipment
 from app.models.user import RoleName
 from tests.factories import (
@@ -29,6 +31,7 @@ from tests.factories import (
     create_category,
     create_customer,
     create_product,
+    create_supplier,
     user_with_role,
 )
 
@@ -213,6 +216,17 @@ def world(db_session: Session) -> World:
             )
         )
     p3.is_active = False
+    supplier = create_supplier(db)
+    p1.default_supplier_id = supplier.id  # p2 has no supplier: approving it is refused
+    db.add(
+        SupplierProduct(
+            supplier_id=supplier.id,
+            product_id=p1.id,
+            unit_cost=Decimal("4.50"),
+            min_order_qty=20,
+            is_preferred=True,
+        )
+    )
     db.add_all(rows)
     db.commit()
     return World(products, warehouse_id, [near, far], order, models)
@@ -410,3 +424,74 @@ def test_note_is_limited(client: TestClient, db_session: Session, world: World) 
         json={"note": "x" * 501},
     )
     assert response.status_code == 422
+
+
+# ------------------------------------------------------------- reorder -> PO
+def test_approving_a_reorder_drafts_a_purchase_order(
+    client: TestClient, db_session: Session, world: World
+) -> None:
+    manager = user_with_role(db_session, RoleName.MANAGER)
+    headers = auth_headers(manager)
+    first = client.get("/api/v1/ml/reorder-recommendations", headers=headers).json()["items"][0]
+    body = client.post(
+        f"/api/v1/ml/reorder-recommendations/{first['id']}/approve", headers=headers
+    ).json()
+    po = db_session.get(PurchaseOrder, body["purchase_order_id"])
+    assert po is not None and po.status == "draft" and po.created_by_id == manager.id
+    assert po.warehouse_id == world.warehouse_id and po.supplier.code == "SUP-001"
+    assert [(i.product_id, i.quantity, i.unit_cost) for i in po.items] == [
+        (world.products[0].id, 20, Decimal("4.50"))  # 12 recommended, supplier minimum 20
+    ]
+    assert f"recommendation #{first['id']}" in po.notes and "risk 80%" in po.notes
+    actions = db_session.scalars(select(AuditLog.action).order_by(AuditLog.id)).all()
+    assert actions[-2:] == ["purchase_order.create", "ml.reorder.approve"]
+
+
+def test_no_supplier_no_approval(client: TestClient, db_session: Session, world: World) -> None:
+    headers = as_(db_session, RoleName.MANAGER)
+    second = client.get("/api/v1/ml/reorder-recommendations", headers=headers).json()["items"][1]
+    response = client.post(
+        f"/api/v1/ml/reorder-recommendations/{second['id']}/approve", headers=headers
+    )
+    assert response.status_code == 422 and "no supplier" in response.json()["detail"]
+    again = client.get("/api/v1/ml/reorder-recommendations", headers=headers).json()["items"][1]
+    assert again["status"] == "pending" and again["purchase_order_id"] is None
+    assert db_session.scalars(select(PurchaseOrder)).all() == []
+
+
+def test_rejecting_drafts_nothing(client: TestClient, db_session: Session, world: World) -> None:
+    headers = as_(db_session, RoleName.MANAGER)
+    first = client.get("/api/v1/ml/reorder-recommendations", headers=headers).json()["items"][0]
+    body = client.post(
+        f"/api/v1/ml/reorder-recommendations/{first['id']}/reject", headers=headers
+    ).json()
+    assert body["purchase_order_id"] is None
+    assert db_session.scalars(select(PurchaseOrder)).all() == []
+
+
+# ------------------------------------------------------------------ summary
+def test_summary(client: TestClient, db_session: Session, world: World) -> None:
+    headers = as_(db_session, RoleName.STAFF)
+    body = client.get("/api/v1/ml/summary", headers=headers).json()
+    assert body == {
+        "as_of": "2026-11-10",
+        "stockouts_high": 1,
+        "stockouts_pending": 2,  # the older run does not count
+        "orders_high_risk": 1,
+        "orders_at_risk": 1,
+        "orders_on_the_way": 1,
+        "forecast_units_7_days": 14.0,
+        "forecast_units_30_days": 60.0,
+        "slotting_pending": 2,
+        "slotting_seconds_saved_per_day": 40.0,
+    }
+    assert (
+        client.get("/api/v1/ml/summary", headers=as_(db_session, RoleName.CUSTOMER)).status_code
+        == 403
+    )
+
+
+def test_summary_before_scoring(client: TestClient, db_session: Session) -> None:
+    body = client.get("/api/v1/ml/summary", headers=as_(db_session, RoleName.MANAGER)).json()
+    assert body["as_of"] is None and body["stockouts_pending"] == 0
+    assert body["forecast_units_7_days"] == 0

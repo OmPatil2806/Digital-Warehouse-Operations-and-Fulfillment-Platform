@@ -12,8 +12,8 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.exceptions import ConflictError, NotFoundError
-from app.models.catalog import Product
+from app.exceptions import ConflictError, NotFoundError, UnprocessableError
+from app.models.catalog import Product, SupplierProduct
 from app.models.ml import MetricSplit, ModelStatus, ModelVersion, UseCase
 from app.models.ml_results import (
     RESULT_TABLES,
@@ -205,11 +205,48 @@ class MLService:
     def decide_reorder(
         self, recommendation_id: int, *, approve: bool, user: User, note: str | None
     ) -> schemas.ReorderRecommendationResponse:
+        """Approving drafts a purchase order (through the purchasing rules) and links it;
+        rejecting only records the decision."""
         row = self.db.get(ReorderRecommendation, recommendation_id)
         if row is None:
             raise NotFoundError("Reorder recommendation not found")
+        if row.status != DecisionStatus.PENDING:
+            raise ConflictError(f"This recommendation is already {row.status}")
+        if approve:
+            row.purchase_order_id = self._draft_purchase_order(row, user).id
         self._decide(row, "ml.reorder", approve=approve, user=user, note=note)
         return self._reorder(row)
+
+    def _draft_purchase_order(self, row: ReorderRecommendation, user: User):
+        from app.schemas.purchase import PurchaseOrderCreate, PurchaseOrderLine
+        from app.services.purchase_order_service import PurchaseOrderService
+
+        product = self.db.get(Product, row.product_id)
+        offers = list(
+            self.db.scalars(select(SupplierProduct).where(SupplierProduct.product_id == product.id))
+        )
+        supplier_id = product.default_supplier_id
+        if supplier_id is None:
+            preferred = [o for o in offers if o.is_preferred] or offers
+            supplier_id = preferred[0].supplier_id if preferred else None
+        if supplier_id is None:
+            raise UnprocessableError(
+                f"{product.sku} has no supplier: set a default supplier before approving"
+            )
+        offer = next((o for o in offers if o.supplier_id == supplier_id), None)
+        quantity = max(row.quantity, offer.min_order_qty if offer else 1, 1)
+        return PurchaseOrderService(self.db).create(
+            PurchaseOrderCreate(
+                supplier_id=supplier_id,
+                warehouse_id=row.warehouse_id,
+                notes=(
+                    f"From ML reorder recommendation #{row.id}: stockout risk "
+                    f"{row.probability:.0%} within 14 days"
+                ),
+                items=[PurchaseOrderLine(product_id=product.id, quantity=quantity)],
+            ),
+            user=user,
+        )
 
     # --------------------------------------------------------------- movement
     def movement(self, product_id: int) -> schemas.MovementResponse:
@@ -403,6 +440,65 @@ class MLService:
             product=_product(product),
             scoring=self._scoring(ProductRecommendation) if rows else None,
             items=items,
+        )
+
+    # ---------------------------------------------------------------- summary
+    def summary(self) -> schemas.MLSummary:
+        """Headline numbers of the latest predictions for the dashboard."""
+        reorder = self._latest(ReorderRecommendation)
+        pending = (
+            []
+            if reorder is None
+            else list(
+                self.db.scalars(
+                    reorder.where(ReorderRecommendation.status == DecisionStatus.PENDING)
+                )
+            )
+        )
+        delays = self._latest(DelayPrediction)
+        risky = [] if delays is None else list(self.db.scalars(delays))
+        slotting = self._latest(SlottingRecommendation)
+        moves = (
+            []
+            if slotting is None
+            else list(
+                self.db.scalars(
+                    slotting.where(SlottingRecommendation.status == DecisionStatus.PENDING)
+                )
+            )
+        )
+        forecast = self._latest(DemandForecast)
+        totals = {7: 0.0, 30: 0.0}
+        if forecast is not None:
+            rows = list(self.db.scalars(forecast))
+            if rows:
+                first = min(r.day for r in rows)
+                for days in totals:
+                    totals[days] = sum(
+                        r.expected_units for r in rows if (r.day - first).days < days
+                    )
+        as_of = [
+            info.as_of
+            for info in (
+                self._scoring(t) for t in (ReorderRecommendation, DelayPrediction, DemandForecast)
+            )
+            if info is not None
+        ]
+        return schemas.MLSummary(
+            as_of=max(as_of) if as_of else None,
+            stockouts_high=sum(r.priority == "high" for r in pending),
+            stockouts_pending=len(pending),
+            orders_high_risk=sum(r.risk_level == "high" for r in risky),
+            orders_at_risk=sum(r.risk_level != "low" for r in risky),
+            orders_on_the_way=len(risky),
+            forecast_units_7_days=totals[7],
+            forecast_units_30_days=totals[30],
+            slotting_pending=len(moves),
+            slotting_seconds_saved_per_day=sum(
+                (r.current_seconds_per_day or 0) - r.recommended_seconds_per_day
+                for r in moves
+                if r.current_seconds_per_day is not None
+            ),
         )
 
     # ---------------------------------------------------------------- helpers

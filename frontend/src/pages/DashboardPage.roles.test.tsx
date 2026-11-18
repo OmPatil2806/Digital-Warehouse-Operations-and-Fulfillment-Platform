@@ -6,6 +6,7 @@ import * as alertsApi from '../api/alertsApi'
 import * as dashboardApi from '../api/dashboardApi'
 import * as fulfillmentApi from '../api/fulfillmentApi'
 import * as healthApi from '../api/healthApi'
+import * as mlApi from '../api/mlApi'
 import * as ordersApi from '../api/ordersApi'
 import { page } from '../test/catalogFixtures'
 import { makeFulfillment, makeInventory, makeOverview } from '../test/dashboardFixtures'
@@ -33,6 +34,10 @@ vi.mock('../api/fulfillmentApi', async (importOriginal) => ({
   listPackingTasks: vi.fn(),
   listShipments: vi.fn(),
 }))
+vi.mock('../api/mlApi', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/mlApi')>()),
+  getMlSummary: vi.fn(),
+}))
 vi.mock('../api/ordersApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/ordersApi')>()),
   listOrders: vi.fn(),
@@ -59,6 +64,18 @@ const ALERT: Alert = {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(healthApi.getHealth).mockResolvedValue(makeHealthResponse())
+  vi.mocked(mlApi.getMlSummary).mockResolvedValue({
+    as_of: '2026-11-10',
+    stockouts_high: 144,
+    stockouts_pending: 2435,
+    orders_high_risk: 4,
+    orders_at_risk: 2234,
+    orders_on_the_way: 2329,
+    forecast_units_7_days: 28901.2,
+    forecast_units_30_days: 126744.7,
+    slotting_pending: 5101,
+    slotting_seconds_saved_per_day: 111600,
+  })
   dashboards.getOverviewDashboard.mockResolvedValue(makeOverview())
   dashboards.getFulfillmentDashboard.mockResolvedValue(makeFulfillment())
   dashboards.getInventoryDashboard.mockResolvedValue(makeInventory())
@@ -138,7 +155,20 @@ describe('DashboardPage for managers', () => {
       'href',
       '/alerts',
     )
-    expect(screen.getByRole('region', { name: 'ML insights' })).toHaveTextContent('Phases 8')
+    const ml = screen.getByRole('region', { name: 'ML insights' })
+    expect(within(ml).getByRole('region', { name: 'Predicted stockouts' })).toHaveTextContent(
+      '2,435144 high risk',
+    )
+    const deliveries = within(ml).getByRole('region', { name: 'High-risk deliveries' })
+    expect(deliveries).toHaveTextContent('4May arrive late')
+    expect(deliveries).toHaveTextContent('Of 2,329 shipments on their way (2,234 medium or high)')
+    expect(within(ml).getByRole('region', { name: 'Demand next 7 days' })).toHaveTextContent(
+      '28,901 units',
+    )
+    expect(within(ml).getByRole('link', { name: 'Open ML insights' })).toHaveAttribute(
+      'href',
+      '/ml-insights',
+    )
   })
 
   it('reloads every dashboard for a new period', async () => {

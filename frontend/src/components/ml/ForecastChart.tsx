@@ -78,10 +78,11 @@ export function ForecastChart({
               }
               cursor={{ stroke: INK.baseline }}
             />
-            <Legend iconType="plainline" wrapperStyle={{ fontSize: 12, color: INK.secondary }} />
+            <Legend wrapperStyle={{ fontSize: 12, color: INK.secondary }} />
             <Area
               name="Likely range"
               dataKey="range"
+              legendType="square"
               stroke="none"
               fill={seriesColor(0)}
               fillOpacity={0.15}
@@ -90,6 +91,7 @@ export function ForecastChart({
             <Line
               name="Expected units"
               dataKey="expected"
+              legendType="plainline"
               stroke={seriesColor(0)}
               strokeWidth={MARKS.lineWidth}
               dot={false}

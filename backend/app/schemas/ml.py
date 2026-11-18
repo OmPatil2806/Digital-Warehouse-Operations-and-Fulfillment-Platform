@@ -165,3 +165,18 @@ class ProductRecommendationsResponse(BaseModel):
     product: ProductRef
     scoring: ScoringInfo | None
     items: list[RecommendedProduct]
+
+
+class MLSummary(BaseModel):
+    """Headline numbers of the latest predictions (dashboard)."""
+
+    as_of: date | None  # None: nothing scored yet
+    stockouts_high: int  # pending reorder recommendations with high priority
+    stockouts_pending: int
+    orders_high_risk: int  # shipments on their way with a high delay risk
+    orders_at_risk: int  # high or medium
+    orders_on_the_way: int
+    forecast_units_7_days: float  # all products, expected
+    forecast_units_30_days: float
+    slotting_pending: int
+    slotting_seconds_saved_per_day: float

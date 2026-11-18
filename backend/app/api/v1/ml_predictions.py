@@ -39,6 +39,11 @@ def models(db: DbSession, user: WarehouseReader) -> list[schemas.ModelSummary]:
     return MLService(db).models()
 
 
+@router.get("/summary", response_model=schemas.MLSummary, summary="Headline ML numbers")
+def ml_summary(db: DbSession, user: WarehouseReader) -> schemas.MLSummary:
+    return MLService(db).summary()
+
+
 @router.get(
     "/demand-forecasts/{product_id}",
     response_model=schemas.DemandForecastResponse,
@@ -74,8 +79,8 @@ def reorder_recommendations(
 @router.post(
     "/reorder-recommendations/{recommendation_id}/approve",
     response_model=schemas.ReorderRecommendationResponse,
-    summary="Approve a reorder recommendation",
-    responses=DECISION,
+    summary="Approve a reorder recommendation (drafts a purchase order)",
+    responses={**DECISION, 422: {"description": "The product has no supplier"}},
 )
 def approve_reorder(
     recommendation_id: int,

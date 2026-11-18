@@ -483,7 +483,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
-- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`) 🚧 *in progress: ML foundation (TensorFlow, chronological splits, configs, metrics, model registry) demand forecasting (LSTM, 15 % better than the best baseline) and reorder recommendation (LSTM stockout model, twice the PR-AUC of the reorder-point formula) and movement classification (ABC kept: no learned grouping was both stable and useful) and slotting (dense suitability network + constrained optimizer, about 50 % less picking time than today's layout, zero rule violations) and order-delay prediction (LSTM on order events, at the ceiling the simulated delays allow) and product recommendation (frequently-bought-together kept: it beats all four networks) done; one training command and comparison reports next*
+- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`) 🚧 *in progress: ML foundation (TensorFlow, chronological splits, configs, metrics, model registry) demand forecasting (LSTM, 15 % better than the best baseline) and reorder recommendation (LSTM stockout model, twice the PR-AUC of the reorder-point formula) and movement classification (ABC kept: no learned grouping was both stable and useful) and slotting (dense suitability network + constrained optimizer, about 50 % less picking time than today's layout, zero rule violations) and order-delay prediction (LSTM on order events, at the ceiling the simulated delays allow) and product recommendation (frequently-bought-together kept: it beats all four networks), one training command (`scripts/train_models.py`) and the overview of all use cases done; documentation and release next*
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 
@@ -546,6 +546,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 ├── scripts/
 │   ├── create_admin.py       # create the first administrator
 │   ├── generate_data.py      # generate, load and validate the two-year synthetic dataset
+│   ├── train_models.py       # train and compare the models of all six ML use cases
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)

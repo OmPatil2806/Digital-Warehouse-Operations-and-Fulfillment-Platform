@@ -3,7 +3,7 @@
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
 [![ML CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.7.0-blue)
+![Version](https://img.shields.io/badge/version-v0.8.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -13,7 +13,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 7 (synthetic data platform) is complete: `v0.7.0`.** See the [Roadmap](#roadmap).
+> **Phase 8 (ML experimentation) is complete: `v0.8.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -53,6 +53,8 @@ The platform manages products, suppliers, physical storage locations, inventory,
 | 4 | Slotting optimisation | ABC-based slotting | Recommended bin and walking-distance reduction |
 | 5 | Order-delay prediction | Logistic regression | Delay probability, risk level, contributing factors |
 | 6 | Product recommendation | Frequently bought together | Top-K related products |
+
+Trained and compared in Phase 8: see [ML Experimentation](#ml-experimentation).
 
 ---
 
@@ -446,6 +448,43 @@ The full dataset passes all 49 checks: see the [validation report](ml/data_valid
 
 ---
 
+## ML Experimentation
+
+Six use cases (section 12 of the project document) are trained offline on the synthetic dataset. Each compares simple **baselines** with several **TensorFlow/Keras** models on the most recent 90 days (the test period), which no model saw while training. A network is selected only if it beats the best baseline; otherwise the baseline is kept. Every model, baselines included, is recorded in the **model registry** (`model_versions`, `model_metrics`) with its dataset, features, hyperparameters and metrics; the selected `.keras` files are what the application will load in Phase 9.
+
+### Train the models
+
+From the project root, after generating the dataset (`python scripts/generate_data.py --size full`):
+
+```bash
+python scripts/train_models.py                                   # all six use cases
+python scripts/train_models.py --use-case demand_forecasting reorder
+python scripts/train_models.py --quick                           # 1 epoch each: checks the pipeline
+```
+
+Each use case writes its comparison to `ml/evaluation/reports/<use case>.md`; the command ends with the [overview of all use cases](ml/evaluation/reports/overview.md). Settings (split, epochs, hyperparameters) are in `ml/configs/*.yaml`. Trained models are saved under `ml/artifacts/` (not committed). On the full dataset the whole run took about an hour on a 4-core CPU (no GPU): demand 16 min, reorder 8, movement 2, slotting 2, delay 5, recommendation 24.
+
+### How the models are compared
+
+- **Chronological split**: train 580 days, validation 60 days (early stopping, decision thresholds), test the last 90 days. Features only use what was known at the time (no future leakage), and every model answers exactly the same questions as its baselines.
+- **Reproducible**: fixed seeds; the same dataset and settings train the same models.
+- **Business rules first**: slotting never breaks a zone, weight or volume rule; movement groups only count if they are stable and useful.
+
+### Results on the full dataset
+
+| Use case | Baseline(s) | Networks compared | Selected | Test result |
+|----------|-------------|-------------------|----------|-------------|
+| Demand forecasting | moving average, seasonal naive | LSTM, GRU, CNN-LSTM, Transformer | **LSTM** | error of the 7/14/30-day totals 35.1 % vs 41.2 % for the moving average (−15 %); 86 % of days inside the 80 % forecast range |
+| Reorder recommendation | reorder-point formula | Dense, Wide & Deep, LSTM | **LSTM** | stockout PR-AUC 0.328 vs 0.166; catches 52 % of stockouts while flagging 20 % of products (formula: 49 % / 31 %); with priority, reorder date, quantity and reasons |
+| Movement classification | ABC analysis | Autoencoder + K-Means, VAE + K-Means, Deep Embedded Clustering | **ABC** (baseline) | no learned grouping was both stable across seeds and useful (fast class carrying most picks); ABC's fast class carries 79 % of next-period picks |
+| Slotting | ABC slotting | Dense and Wide & Deep suitability networks + constrained optimizer | **Dense suitability** | 49.8 % less estimated picking time than the current layout (ABC 49.7 %, perfect foresight 50.1 %), 0 rule violations |
+| Order-delay prediction | logistic regression | Dense, Wide & Deep, Deep & Cross, LSTM on order events | **LSTM on events** | PR-AUC 0.119 vs 0.116, well calibrated; the simulator's own delay formula reaches only 0.114 on this period, so delays are mostly chance here |
+| Product recommendation | frequently bought together | NCF, Two-Tower, Deep & Cross, GRU | **Frequently bought together** (baseline) | held-out product in the top 10 for 56 % of baskets (best network: Two-Tower, 46 %) |
+
+**What the results say**: the networks win clearly where the data has learnable structure that the simple rules ignore (seasonal demand, stockouts before peaks). Where the simple rule already matches how the data arises (baskets built from product pairs, groups defined by pick rate) or the outcome is mostly chance (delays), the baseline is as good or better, and the selection keeps it. Two notes: TensorFlow Recommenders needs the older Keras 2, so the Two-Tower model is written in plain Keras 3; the slotting pick time is an estimate (walking, handling, heavy goods up high), and the cost of moving stock into a new layout is not counted.
+
+---
+
 ## Architecture
 
 ```
@@ -483,7 +522,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 5: Order fulfillment**: complete order lifecycle, returns and supplier purchase orders (`v0.5.0`) ✅
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
-- [ ] **Phase 8: ML experimentation**: trained and compared models for six use cases (`v0.8.0`) 🚧 *in progress: ML foundation (TensorFlow, chronological splits, configs, metrics, model registry) demand forecasting (LSTM, 15 % better than the best baseline) and reorder recommendation (LSTM stockout model, twice the PR-AUC of the reorder-point formula) and movement classification (ABC kept: no learned grouping was both stable and useful) and slotting (dense suitability network + constrained optimizer, about 50 % less picking time than today's layout, zero rule violations) and order-delay prediction (LSTM on order events, at the ceiling the simulated delays allow) and product recommendation (frequently-bought-together kept: it beats all four networks), one training command (`scripts/train_models.py`) and the overview of all use cases done; documentation and release next*
+- [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`)
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 
@@ -646,10 +685,10 @@ ruff check .       # lint
 black --check .    # format check (use `black .` to auto-format)
 ```
 
-### Data generation (from `ml/`)
+### Data generation and ML (from `ml/`)
 
 ```bash
-pytest -v          # run tests (generator, validation, the generate command)
+pytest -v          # run tests (generator, validation, features, baselines, models, training runs)
 ruff check .       # lint
 black --check .    # format check
 ```
@@ -672,7 +711,7 @@ Every push and pull request to `main` runs **GitHub Actions**:
 |----------|-----------|-------|
 | Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest → Vite build |
-| ML CI | `ml/**`, `backend/**` or the data scripts change | Ruff → Black → Pytest → generate and validate the small dataset |
+| ML CI | `ml/**`, `backend/**` or the data and training scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it |
 
 ---
 

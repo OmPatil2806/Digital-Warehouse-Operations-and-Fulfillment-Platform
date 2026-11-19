@@ -35,3 +35,19 @@ ignore = [
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra -q"
+
+# ---------- Coverage (pytest --cov) ----------
+# Statements and branches of the application code that the tests run. CI fails below
+# `fail_under`; `pytest --cov` prints the files with gaps and the lines they miss.
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]

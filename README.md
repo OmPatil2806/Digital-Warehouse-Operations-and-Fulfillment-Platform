@@ -587,7 +587,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 96 %, minimum 95 %) and end-to-end business scenarios (`backend/tests/integration/`: order to delivery and return, low stock to supplier delivery, ML reorder to received stock) done; more tests where coverage is weak next*
 
 ---
 
@@ -611,7 +611,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   │   ├── exceptions/       # application errors → JSON responses
 │   │   └── api/              # dependencies, access rules and v1 endpoints (health, auth, users, catalog, warehouses, inventory, cycle counts, alerts, audit)
 │   ├── migrations/           # Alembic database migrations
-│   ├── tests/                # Pytest tests (temporary test database)
+│   ├── tests/                # Pytest tests (temporary test database); integration/: business scenarios
 │   ├── alembic.ini
 │   ├── pyproject.toml        # Ruff, Black and Pytest settings
 │   ├── requirements.txt      # runtime dependencies
@@ -745,9 +745,11 @@ Open <http://localhost:5173> and sign in with your admin account (or a [demo log
 ### Backend (from `backend/`, with the virtual environment active)
 
 ```bash
-pytest -v          # run tests
-ruff check .       # lint
-black --check .    # format check (use `black .` to auto-format)
+pytest -v                   # run tests (unit, API and tests/integration/ business scenarios)
+pytest --cov                # with test coverage: files with gaps and the lines they miss
+pytest tests/integration    # only the end-to-end scenarios
+ruff check .                # lint
+black --check .             # format check (use `black .` to auto-format)
 ```
 
 ### Data generation and ML (from `ml/`)
@@ -774,7 +776,7 @@ Every push and pull request to `main` runs **GitHub Actions**:
 
 | Workflow | Runs when | Steps |
 |----------|-----------|-------|
-| Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest → Alembic migrations → API smoke test |
+| Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest with coverage (fails below 95 %) → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest → Vite build |
 | ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → backtest |
 

@@ -2,6 +2,8 @@
 -r requirements.txt
 
 pytest==9.2.0
+pytest-cov==7.1.0  # test coverage (settings in pyproject.toml)
+coverage==7.17.2
 httpx2==2.16.0  # HTTP client used by FastAPI's TestClient
 ruff==0.17.3
 black==26.10.1

@@ -59,8 +59,14 @@ jobs:
           black --check .
           black --check --config pyproject.toml ../scripts
 
-      - name: Run tests (Pytest)
-        run: pytest -v
+      - name: Run tests with coverage (Pytest, fails below 95 %)
+        run: pytest -v --cov --cov-report=term
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "### Backend test coverage" >> "$GITHUB_STEP_SUMMARY"
+          coverage report --format=markdown --fail-under=0 >> "$GITHUB_STEP_SUMMARY"
 
       - name: Apply database migrations (Alembic)
         run: alembic upgrade head

@@ -186,7 +186,9 @@ export function DelayCheck({ delay }: { delay: DelayAccuracy }) {
                 <td className="py-2 pr-3 text-right">{formatInteger(level.parcels)}</td>
                 <td className="py-2 pr-3 text-right">{formatInteger(level.delivered)}</td>
                 <td className="py-2 pr-3 text-right">{formatInteger(level.late)}</td>
-                <td className="py-2 pr-3 text-right font-medium">{formatShare(level.late_rate)}</td>
+                <td className="py-2 pr-3 text-right font-medium whitespace-nowrap">
+                  {formatShare(level.late_rate)}
+                </td>
               </tr>
             ))}
           </tbody>

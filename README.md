@@ -3,7 +3,7 @@
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
 [![ML CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml)
-![Version](https://img.shields.io/badge/version-v0.8.0-blue)
+![Version](https://img.shields.io/badge/version-v0.9.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -13,7 +13,7 @@ A full-stack platform that digitises the core operations of a modern distributio
 The platform manages products, suppliers, physical storage locations, inventory, customer orders, picking, packing, shipping and returns, and shows the state of the warehouse through role-based dashboards. On top of the operational system, six ML use cases help forecast demand, prevent stockouts, place products intelligently, warn about delayed orders and recommend related products. Every model is compared against a simple baseline.
 
 > **Status:** 🚧 Under active development, built step by step in 10 phases.
-> **Phase 8 (ML experimentation) is complete: `v0.8.0`.** See the [Roadmap](#roadmap).
+> **Phase 9 (ML application integration) is complete: `v0.9.0`.** See the [Roadmap](#roadmap).
 
 ---
 
@@ -54,7 +54,7 @@ The platform manages products, suppliers, physical storage locations, inventory,
 | 5 | Order-delay prediction | Logistic regression | Delay probability, risk level, contributing factors |
 | 6 | Product recommendation | Frequently bought together | Top-K related products |
 
-Trained and compared in Phase 8: see [ML Experimentation](#ml-experimentation).
+Trained and compared in Phase 8 ([ML Experimentation](#ml-experimentation)), used in the application since Phase 9 ([ML in the Application](#ml-in-the-application)).
 
 ---
 
@@ -450,7 +450,7 @@ The full dataset passes all 49 checks: see the [validation report](ml/data_valid
 
 ## ML Experimentation
 
-Six use cases (section 12 of the project document) are trained offline on the synthetic dataset. Each compares simple **baselines** with several **TensorFlow/Keras** models on the most recent 90 days (the test period), which no model saw while training. A network is selected only if it beats the best baseline; otherwise the baseline is kept. Every model, baselines included, is recorded in the **model registry** (`model_versions`, `model_metrics`) with its dataset, features, hyperparameters and metrics; the selected `.keras` files are what the application will load in Phase 9.
+Six use cases (section 12 of the project document) are trained offline on the synthetic dataset. Each compares simple **baselines** with several **TensorFlow/Keras** models on the most recent 90 days (the test period), which no model saw while training. A network is selected only if it beats the best baseline; otherwise the baseline is kept. Every model, baselines included, is recorded in the **model registry** (`model_versions`, `model_metrics`) with its dataset, features, hyperparameters and metrics; the selected models make the predictions the application shows ([ML in the Application](#ml-in-the-application)).
 
 ### Train the models
 
@@ -485,6 +485,69 @@ Each use case writes its comparison to `ml/evaluation/reports/<use case>.md`; th
 
 ---
 
+## ML in the Application
+
+The selected model of every use case makes predictions **offline**, in one scoring command; the application only reads them. TensorFlow is therefore not needed by the backend, and pages stay fast.
+
+```
+selected model (registry) -> scripts/score_models.py -> prediction tables -> /api/v1/ml -> web app
+```
+
+### Score the models
+
+From the project root, after training (`python scripts/train_models.py`):
+
+```bash
+python scripts/score_models.py                         # all six use cases, as of the last day of data
+python scripts/score_models.py --use-case reorder      # only some use cases
+python scripts/score_models.py --backtest 30           # check: forecasts and delays as of 30 days earlier
+```
+
+Every run adds rows (`scored_at`, `as_of`) and keeps the earlier ones. The application shows the run with the latest `as_of`, so a backtest never replaces the current predictions. On the full dataset scoring takes a few minutes on a CPU, and the backtest about a minute.
+
+### Where the predictions appear
+
+| Where | What | Who |
+|-------|------|-----|
+| Dashboard | Predicted stockouts, high-risk deliveries, demand of the next 7/30 days with the latest forecast error, slotting moves | Manager |
+| ML insights → Reorder | Products likely to run out within 14 days: risk, order-by date, quantity, reasons; **approving drafts a purchase order** for the default (or preferred) supplier, at least its minimum quantity | Manager decides, staff reads |
+| ML insights → Slotting | Better bins, biggest picking-time saving first (zone, weight and volume rules kept); approve or reject | Manager decides, staff reads |
+| ML insights → Delay risk | Shipments on their way, most likely to be late first, with reasons | Manager, staff |
+| ML insights → Movement | Fast, medium and slow movers and their share of picks | Manager, staff |
+| ML insights → Models | The model in use per use case and its test result; **predictions vs reality** | Manager, staff |
+| Product page | 30-day demand forecast with its likely range, movement class, frequently bought together | Warehouse roles (related products for everyone) |
+| Order page | Delivery risk while the parcel is on its way | Warehouse roles |
+
+Every approve and reject is recorded in the audit log. A product without a supplier cannot be approved for reordering: nothing is saved and the reason is shown.
+
+### ML endpoints (`/api/v1/ml`)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/models`, `/summary`, `/accuracy` | Models in use; dashboard numbers; predictions vs reality |
+| GET | `/demand-forecasts/{product_id}` | 30 days of forecast with range, and 7/14/30-day totals |
+| GET | `/reorder-recommendations` | Filter by decision, priority, warehouse |
+| POST | `/reorder-recommendations/{id}/approve` · `/reject` | Decide (manager, admin); approval drafts a purchase order |
+| GET | `/movement-classifications`, `/movement-classifications/summary`, `/movement-classification/{product_id}` | Movement classes |
+| GET | `/slotting-recommendations` · POST `/{id}/approve` · `/reject` | Slotting moves and decisions |
+| GET | `/delay-risks`, `/delay-risk/{order_id}` | Delivery risk of shipments on their way |
+| GET | `/product-recommendations/{product_id}` | Top 10 related products (customers: active products only) |
+
+### Predictions vs reality
+
+Predictions made before the last day with orders are compared with what happened next. With `--backtest 30` on the full dataset (made on 11 October, checked on the 30 days after, which the models never saw):
+
+| Check | Result |
+|-------|--------|
+| Forecast error of each product's 30-day total | **26 %** (25 % in testing: the model holds up) |
+| All products together | 4.2 % too low (94,930 units forecast, 99,117 ordered) |
+| Days inside the likely range | 86 % of product-days (the range aims at 80 %) |
+| Late deliveries by predicted risk | high 1 of 1, medium 24 %, low 16 %; 35 % of late parcels had been marked medium or high |
+
+The forecasts are reliable for planning totals; single product-days remain hard to predict. The delay model ranks risk in the right direction but is weak, as expected from Phase 8 (delays are mostly chance in this data), so the dashboard counts only high-risk deliveries.
+
+---
+
 ## Architecture
 
 ```
@@ -496,9 +559,9 @@ Each use case writes its comparison to `ml/evaluation/reports/<use case>.md`; th
      Routers -> Services -> Repositories -> SQLAlchemy
                |                          |
                v                          v
-        SQLite Database           ML Inference Layer
-   operational, feature and     saved .keras models,
-     prediction tables           prediction services
+        SQLite Database           Offline ML Scoring
+   operational, feature and    selected .keras models
+     prediction tables         -> prediction tables
                ^                          ^
                +------------+-------------+
                             |
@@ -523,7 +586,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
-- [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`) 🚧 *in progress: prediction tables, the scoring command (`scripts/score_models.py`) and the ML API (`/api/v1/ml`, approve/reject with audit) and the frontend building blocks (ML API client, ForecastChart, ReorderTable, MovementMatrix, SlottingList, RiskBadge, RecommendationList) the ML insights page (reorder, slotting, delay risk, movement and models tabs; approve/reject) and predictions where people work (forecast, movement class and related products on product pages, delay risk on orders, ML numbers on the dashboard, approved reorders drafting purchase orders) and checking predictions against reality (backtests with `scripts/score_models.py --backtest 30`, forecast error and late deliveries by risk level on the Models tab, forecast error on the dashboard) done; final checks and release next*
+- [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 
 ---
@@ -713,7 +776,7 @@ Every push and pull request to `main` runs **GitHub Actions**:
 |----------|-----------|-------|
 | Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest → Vite build |
-| ML CI | `ml/**`, `backend/**` or the data and training scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it |
+| ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → backtest |
 
 ---
 

@@ -13,10 +13,11 @@ from training.data import read_frame
 def predict(engine: Engine, ctx: Context) -> list[dict]:
     from training.train_delay import model_inputs
 
-    on_the_way = build_delay_set(engine, on_the_way=True)
+    as_of = ctx.last if ctx.backtest else None  # a backtest sees the data as on that day
+    on_the_way = build_delay_set(engine, on_the_way=True, as_of=as_of)
     if not len(on_the_way):
         return []
-    delivered = build_delay_set(engine)
+    delivered = build_delay_set(engine, as_of=as_of)
     if ctx.is_baseline:  # the regression is refitted on the training period, as in training
         train_end = np.datetime64(ctx.split().train_end, "D")
         past = delivered.subset(np.flatnonzero(delivered.shipped_day <= train_end))

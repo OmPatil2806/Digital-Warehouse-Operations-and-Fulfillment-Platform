@@ -2,6 +2,7 @@ import { useId } from 'react'
 
 import { PageHeader } from '../components/common/PageHeader'
 import {
+  AccuracyPanel,
   DelayPanel,
   ModelsPanel,
   MovementPanel,
@@ -67,7 +68,12 @@ export default function MLInsightsPage() {
         {active.view === 'slotting' && <SlottingPanel canDecide={canDecide} />}
         {active.view === 'delays' && <DelayPanel />}
         {active.view === 'movement' && <MovementPanel />}
-        {active.view === 'models' && <ModelsPanel />}
+        {active.view === 'models' && (
+          <div className="space-y-4">
+            <ModelsPanel />
+            <AccuracyPanel />
+          </div>
+        )}
       </div>
     </div>
   )

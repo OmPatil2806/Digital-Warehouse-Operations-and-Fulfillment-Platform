@@ -39,6 +39,15 @@ def models(db: DbSession, user: WarehouseReader) -> list[schemas.ModelSummary]:
     return MLService(db).models()
 
 
+@router.get(
+    "/accuracy",
+    response_model=schemas.PredictionCheck,
+    summary="Predictions vs reality: the latest checkable forecast and delay risks",
+)
+def ml_accuracy(db: DbSession, user: WarehouseReader) -> schemas.PredictionCheck:
+    return MLService(db).check()
+
+
 @router.get("/summary", response_model=schemas.MLSummary, summary="Headline ML numbers")
 def ml_summary(db: DbSession, user: WarehouseReader) -> schemas.MLSummary:
     return MLService(db).summary()

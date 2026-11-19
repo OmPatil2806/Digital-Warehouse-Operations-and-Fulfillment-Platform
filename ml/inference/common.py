@@ -19,6 +19,7 @@ class Context:
     model: ModelVersion
     first: date
     last: date  # the last day of known data: predictions are "as of" this day
+    backtest: bool = False  # `last` is earlier than the data: later days are hidden
 
     @property
     def name(self) -> str:

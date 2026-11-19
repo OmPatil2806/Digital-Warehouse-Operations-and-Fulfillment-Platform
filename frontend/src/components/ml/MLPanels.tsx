@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import {
   decideReorder,
   decideSlotting,
+  getAccuracy,
   getModels,
   getMovementSummary,
   listDelayRisks,
@@ -20,12 +21,13 @@ import type {
   RiskLevel,
   SlottingRecommendation,
 } from '../../types/ml'
-import { formatNumber } from '../../utils/format'
+import { formatNumber, formatShortDate } from '../../utils/format'
 import { PaginationBar } from '../common/DataTable'
 import { FilterSelect } from '../common/PageHeader'
 import { DelayRiskTable } from './DelayRiskTable'
 import { ModelsTable } from './ModelsTable'
 import { MovementMatrix } from './MovementMatrix'
+import { PredictionCheckView } from './PredictionCheck'
 import { ReorderTable } from './ReorderTable'
 import { SlottingList } from './SlottingList'
 
@@ -93,6 +95,20 @@ export function ModelsPanel() {
       errorMessage={query.errorMessage}
     >
       <ModelsTable models={query.data ?? []} />
+    </Panel>
+  )
+}
+
+export function AccuracyPanel() {
+  const query = useApiQuery(mlKeys.accuracy, getAccuracy)
+  const until = query.data?.data_until
+  return (
+    <Panel
+      intro={`Predictions vs reality: earlier predictions compared with what happened next${until ? ` (orders known up to ${formatShortDate(until)})` : ''}.`}
+      isLoading={query.isLoading}
+      errorMessage={query.errorMessage}
+    >
+      {query.data && <PredictionCheckView check={query.data} />}
     </Panel>
   )
 }

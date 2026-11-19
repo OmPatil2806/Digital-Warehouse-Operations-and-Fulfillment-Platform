@@ -161,4 +161,62 @@ export interface MLSummary {
   forecast_units_30_days: number
   slotting_pending: number
   slotting_seconds_saved_per_day: number
+  /** Error of the product totals of the latest forecast whose days have passed. */
+  forecast_error: number | null
+  forecast_error_days: number
+}
+
+// ------------------------------------------------------------ predictions vs reality
+export interface AccuracyDay {
+  day: string
+  forecast_units: number
+  actual_units: number
+}
+
+export interface DemandAccuracy {
+  model_name: string
+  is_baseline: boolean
+  scored_at: string
+  as_of: string
+  first_day: string
+  last_day: string
+  days_checked: number
+  days_forecast: number
+  products: number
+  forecast_units: number
+  actual_units: number
+  daily_error: number | null
+  period_error: number | null
+  bias: number | null
+  range_coverage: number | null
+  test_error: number | null
+  daily: AccuracyDay[]
+}
+
+export interface DelayLevelCheck {
+  risk_level: RiskLevel
+  parcels: number
+  delivered: number
+  late: number
+  late_rate: number | null
+}
+
+export interface DelayAccuracy {
+  model_name: string
+  is_baseline: boolean
+  scored_at: string
+  as_of: string
+  parcels: number
+  delivered: number
+  on_the_way: number
+  late: number
+  late_rate: number | null
+  late_flagged: number | null
+  levels: DelayLevelCheck[]
+}
+
+export interface PredictionCheck {
+  data_until: string | null
+  demand: DemandAccuracy | null
+  delay: DelayAccuracy | null
 }

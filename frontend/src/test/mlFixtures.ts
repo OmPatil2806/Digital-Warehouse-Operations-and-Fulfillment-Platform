@@ -1,6 +1,7 @@
 import type {
   DemandForecast,
   MovementSummary,
+  PredictionCheck,
   ProductRecommendations,
   ReorderRecommendation,
   SlottingRecommendation,
@@ -96,4 +97,47 @@ export const recommendationsFixture: ProductRecommendations = {
     { rank: 1, product: { id: 8, sku: 'ACC-00008', name: 'Wireless Mouse' }, score: 9 },
     { rank: 2, product: { id: 9, sku: 'ACC-00009', name: 'USB-C Hub' }, score: 7 },
   ],
+}
+
+export const predictionCheckFixture: PredictionCheck = {
+  data_until: '2026-11-10',
+  demand: {
+    model_name: 'lstm',
+    is_baseline: false,
+    scored_at: '2026-11-19T10:00:00Z',
+    as_of: '2026-10-11',
+    first_day: '2026-10-12',
+    last_day: '2026-11-10',
+    days_checked: 30,
+    days_forecast: 30,
+    products: 2000,
+    forecast_units: 94929.7,
+    actual_units: 99117,
+    daily_error: 0.95,
+    period_error: 0.257,
+    bias: -0.042,
+    range_coverage: 0.863,
+    test_error: 0.252,
+    daily: [
+      { day: '2026-10-12', forecast_units: 3100.4, actual_units: 3250 },
+      { day: '2026-10-13', forecast_units: 3200.1, actual_units: 3012 },
+    ],
+  },
+  delay: {
+    model_name: 'lstm_events',
+    is_baseline: false,
+    scored_at: '2026-11-19T10:00:00Z',
+    as_of: '2026-10-11',
+    parcels: 1811,
+    delivered: 1800,
+    on_the_way: 11,
+    late: 326,
+    late_rate: 0.181,
+    late_flagged: 0.353,
+    levels: [
+      { risk_level: 'high', parcels: 1, delivered: 1, late: 1, late_rate: 1 },
+      { risk_level: 'medium', parcels: 476, delivered: 476, late: 114, late_rate: 0.2395 },
+      { risk_level: 'low', parcels: 1334, delivered: 1323, late: 211, late_rate: 0.1595 },
+    ],
+  },
 }

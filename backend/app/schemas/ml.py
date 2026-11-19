@@ -167,6 +167,68 @@ class ProductRecommendationsResponse(BaseModel):
     items: list[RecommendedProduct]
 
 
+# ------------------------------------------------------------ predictions vs reality
+class AccuracyDay(BaseModel):
+    day: date
+    forecast_units: float  # all products, expected
+    actual_units: float  # all products, ordered
+
+
+class DemandAccuracy(BaseModel):
+    """A past demand forecast run against what customers then ordered."""
+
+    model_name: str
+    is_baseline: bool
+    scored_at: datetime
+    as_of: date
+    first_day: date  # the forecast days that have passed
+    last_day: date
+    days_checked: int
+    days_forecast: int
+    products: int
+    forecast_units: float
+    actual_units: float
+    daily_error: float | None  # WAPE over product-days: sum |actual - forecast| / sum actual
+    period_error: float | None  # the same over each product's total for the checked days
+    bias: float | None  # (forecast - actual) / actual: > 0 too high, < 0 too low
+    range_coverage: float | None  # share of product-days whose demand fell inside the range
+    test_error: float | None  # the model's error on the test period, for the same span
+    daily: list[AccuracyDay]
+
+
+class DelayLevelCheck(BaseModel):
+    risk_level: RiskLevel
+    parcels: int
+    delivered: int
+    late: int
+    late_rate: float | None  # among the delivered ones
+
+
+class DelayAccuracy(BaseModel):
+    """A past delivery-risk run against when the parcels then arrived."""
+
+    model_name: str
+    is_baseline: bool
+    scored_at: datetime
+    as_of: date
+    parcels: int
+    delivered: int
+    on_the_way: int  # not delivered yet: outcome unknown
+    late: int
+    late_rate: float | None
+    late_flagged: float | None  # share of the late parcels marked medium or high risk
+    levels: list[DelayLevelCheck]  # high, medium, low
+
+
+class PredictionCheck(BaseModel):
+    """How the latest checkable predictions did: runs made before the last day with
+    orders, whose days have (partly) passed. None: nothing to check yet."""
+
+    data_until: date | None  # the last day with orders
+    demand: DemandAccuracy | None
+    delay: DelayAccuracy | None
+
+
 class MLSummary(BaseModel):
     """Headline numbers of the latest predictions (dashboard)."""
 
@@ -180,3 +242,5 @@ class MLSummary(BaseModel):
     forecast_units_30_days: float
     slotting_pending: int
     slotting_seconds_saved_per_day: float
+    forecast_error: float | None = None  # period error of the latest checked forecast
+    forecast_error_days: int = 0  # how many passed days that check covers

@@ -7,13 +7,22 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   forecastFixture,
   movementSummaryFixture,
+  predictionCheckFixture,
   recommendationsFixture,
   reorderFixture,
   slottingFixture,
 } from '../../test/mlFixtures'
 import { ForecastChart } from './ForecastChart'
-import { formatProbability, formatSecondsPerDay, formatUnits, modelLabel } from './mlFormat'
+import {
+  formatBias,
+  formatProbability,
+  formatSecondsPerDay,
+  formatShare,
+  formatUnits,
+  modelLabel,
+} from './mlFormat'
 import { MovementMatrix } from './MovementMatrix'
+import { PredictionCheckView } from './PredictionCheck'
 import { RecommendationList } from './RecommendationList'
 import { ReorderTable } from './ReorderTable'
 import { RiskBadge } from './RiskBadge'
@@ -33,6 +42,53 @@ describe('ML formatting', () => {
     expect(formatUnits(12.6)).toBe('13')
     expect(modelLabel('lstm_events', false)).toBe('lstm events model')
     expect(modelLabel('abc', true)).toBe('baseline: abc')
+    expect(formatBias(0.04)).toBe('4 % too high')
+    expect(formatBias(-0.1)).toBe('10 % too low')
+    expect(formatBias(0.001)).toBe('on target')
+    expect(formatBias(null)).toBe('—')
+    expect(formatShare(null)).toBe('—')
+    expect(formatShare(0.863)).toBe('86 %')
+  })
+})
+
+describe('PredictionCheckView', () => {
+  it('compares the forecast with the orders that followed', async () => {
+    render(<PredictionCheckView check={predictionCheckFixture} />)
+    const demand = screen.getByRole('region', { name: 'Demand forecast of 11 Oct' })
+    expect(demand).toHaveTextContent('lstm model · 2,000 products · 30 of 30 forecast days')
+    expect(demand).toHaveTextContent(
+      "Forecast error26 %Of each product's 30-day total; 25 % in testing",
+    )
+    expect(demand).toHaveTextContent('All products together4.2 % too low94,930 forecast, 99,117')
+    expect(demand).toHaveTextContent('Inside the likely range86 %')
+    await userEvent.setup().click(within(demand).getByRole('button', { name: /table/i }))
+    expect(within(demand).getByRole('row', { name: /12 Oct/ })).toHaveTextContent(
+      '12 Oct3,1003,250',
+    )
+  })
+
+  it('shows how many parcels of each risk level arrived late', () => {
+    render(<PredictionCheckView check={predictionCheckFixture} />)
+    const delay = screen.getByRole('region', { name: 'Delivery risks of 11 Oct' })
+    expect(delay).toHaveTextContent(
+      'The model had marked 35 % of the late ones as medium or high risk. 11 are still on their way.',
+    )
+    const table = within(delay).getByRole('table', { name: 'Late deliveries by predicted risk' })
+    expect(within(table).getByRole('row', { name: /Medium risk/ })).toHaveTextContent(
+      '47647611424 %',
+    )
+    expect(within(table).getByRole('row', { name: /Low risk/ })).toHaveTextContent('16 %')
+  })
+
+  it('explains how to check before any day has passed', () => {
+    render(<PredictionCheckView check={{ data_until: '2026-11-10', demand: null, delay: null }} />)
+    expect(screen.getByText(/Nothing to check yet/)).toHaveTextContent('--backtest 30')
+  })
+
+  it('shows only what can be checked', () => {
+    render(<PredictionCheckView check={{ ...predictionCheckFixture, demand: null }} />)
+    expect(screen.queryByRole('region', { name: /Demand forecast/ })).toBeNull()
+    expect(screen.getByRole('region', { name: /Delivery risks/ })).toBeInTheDocument()
   })
 })
 

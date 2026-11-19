@@ -7,7 +7,12 @@ import * as mlApi from '../api/mlApi'
 import { AuthContext } from '../context/authContext'
 import { AppRoutes } from '../routes/AppRoutes'
 import { page } from '../test/catalogFixtures'
-import { movementSummaryFixture, reorderFixture, slottingFixture } from '../test/mlFixtures'
+import {
+  movementSummaryFixture,
+  predictionCheckFixture,
+  reorderFixture,
+  slottingFixture,
+} from '../test/mlFixtures'
 import { loggedInAs, renderWithAuth } from '../test/renderWithAuth'
 import { TestProviders } from '../test/TestProviders'
 import type { ModelSummary } from '../types/ml'
@@ -16,6 +21,7 @@ import MLInsightsPage from './MLInsightsPage'
 vi.mock('../api/mlApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/mlApi')>()),
   getModels: vi.fn(),
+  getAccuracy: vi.fn(),
   listReorderRecommendations: vi.fn(),
   decideReorder: vi.fn(),
   listSlottingRecommendations: vi.fn(),
@@ -60,6 +66,7 @@ beforeEach(() => {
   api.listSlottingRecommendations.mockResolvedValue(page([slottingFixture()]))
   api.decideSlotting.mockResolvedValue(slottingFixture({ status: 'rejected' }))
   api.getModels.mockResolvedValue(MODELS)
+  api.getAccuracy.mockResolvedValue(predictionCheckFixture)
   api.listDelayRisks.mockResolvedValue(
     page([
       {
@@ -175,6 +182,15 @@ describe('MLInsightsPage', () => {
     expect(movement).toHaveTextContent('Baseline')
     expect(movement).toHaveTextContent('79 %')
     expect(movement).toHaveTextContent('Not scored yet')
+
+    // Predictions vs reality, below the models
+    expect(await screen.findByText(/orders known up to 10 Nov/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Demand forecast of 11 Oct' })).toHaveTextContent(
+      'Forecast error26 %',
+    )
+    expect(screen.getByRole('region', { name: 'Delivery risks of 11 Oct' })).toHaveTextContent(
+      '326 of 1,800 delivered parcels arrived late',
+    )
   })
 
   it('shows errors from the API', async () => {

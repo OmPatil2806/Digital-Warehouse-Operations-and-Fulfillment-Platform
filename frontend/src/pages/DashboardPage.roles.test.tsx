@@ -75,6 +75,8 @@ beforeEach(() => {
     forecast_units_30_days: 126744.7,
     slotting_pending: 5101,
     slotting_seconds_saved_per_day: 111600,
+    forecast_error: 0.257,
+    forecast_error_days: 30,
   })
   dashboards.getOverviewDashboard.mockResolvedValue(makeOverview())
   dashboards.getFulfillmentDashboard.mockResolvedValue(makeFulfillment())
@@ -162,9 +164,9 @@ describe('DashboardPage for managers', () => {
     const deliveries = within(ml).getByRole('region', { name: 'High-risk deliveries' })
     expect(deliveries).toHaveTextContent('4May arrive late')
     expect(deliveries).toHaveTextContent('Of 2,329 shipments on their way (2,234 medium or high)')
-    expect(within(ml).getByRole('region', { name: 'Demand next 7 days' })).toHaveTextContent(
-      '28,901 units',
-    )
+    const demand = within(ml).getByRole('region', { name: 'Demand next 7 days' })
+    expect(demand).toHaveTextContent('28,901 units')
+    expect(demand).toHaveTextContent('Forecast error 26 % on the last 30 days')
     expect(within(ml).getByRole('link', { name: 'Open ML insights' })).toHaveAttribute(
       'href',
       '/ml-insights',

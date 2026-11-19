@@ -6,7 +6,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.audit import AuditLog
@@ -20,7 +20,7 @@ from app.models.ml_results import (
     ReorderRecommendation,
     SlottingRecommendation,
 )
-from app.models.order import Order
+from app.models.order import Order, OrderItem
 from app.models.purchase import PurchaseOrder
 from app.models.shipment import Shipment
 from app.models.user import RoleName
@@ -87,6 +87,7 @@ def world(db_session: Session) -> World:
         priority="normal",
         ship_to_name="Someone",
         subtotal=Decimal("10.00"),
+        created_at=NEW,  # the last day with orders is AS_OF: nothing to check yet
     )
     db.add(order)
     db.flush()
@@ -484,6 +485,8 @@ def test_summary(client: TestClient, db_session: Session, world: World) -> None:
         "forecast_units_30_days": 60.0,
         "slotting_pending": 2,
         "slotting_seconds_saved_per_day": 40.0,
+        "forecast_error": None,  # no forecast made before the last day with orders
+        "forecast_error_days": 0,
     }
     assert (
         client.get("/api/v1/ml/summary", headers=as_(db_session, RoleName.CUSTOMER)).status_code
@@ -495,3 +498,197 @@ def test_summary_before_scoring(client: TestClient, db_session: Session) -> None
     body = client.get("/api/v1/ml/summary", headers=as_(db_session, RoleName.MANAGER)).json()
     assert body["as_of"] is None and body["stockouts_pending"] == 0
     assert body["forecast_units_7_days"] == 0
+
+
+# ---------------------------------------------------------- predictions vs reality
+BACKTEST = date(2026, 11, 5)  # a run as of this day, scored after the current one
+LATER = NEW + timedelta(hours=1)
+
+
+def day_at(day: int) -> datetime:
+    return datetime(2026, 11, day, 9, tzinfo=UTC)
+
+
+def backtest(db: Session, world: World) -> None:
+    """Forecasts and delay risks as of 5 November, then what happened until 10 November."""
+    p1, p2, _ = world.products
+    demand = world.models[UseCase.DEMAND]
+    demand.metrics.append(ModelMetric(split=MetricSplit.TEST, name="wape_7d_total", value=0.4))
+    stamp = {"scored_at": LATER, "as_of": BACKTEST}
+    for offset in range(1, 31):
+        day = BACKTEST + timedelta(days=offset)
+        for product, expected, low, high in ((p1, 2.0, 1.0, 4.0), (p2, 1.0, 0.0, 1.0)):
+            db.add(
+                DemandForecast(
+                    product_id=product.id,
+                    day=day,
+                    expected_units=expected,
+                    low_units=low,
+                    high_units=high,
+                    model_version_id=demand.id,
+                    **stamp,
+                )
+            )
+    customer_id = world.order.customer_id
+    carrier_id = db.scalars(select(Shipment.carrier_id)).first()
+    # (ordered on, product, units, risk level, expected delivery, delivered on)
+    events = [
+        (6, p1, 3, "high", 8, 9),  # late, and flagged
+        (7, p1, 5, "medium", 8, 7),  # on time
+        (8, p2, 1, "low", 9, None),  # still on its way
+        (9, None, 0, "low", 9, 10),  # late, not flagged
+    ]
+    for number, (day, product, units, risk, expected, delivered) in enumerate(events, start=2):
+        order = Order(
+            order_number=f"SO-2026-00000{number}",
+            customer_id=customer_id,
+            warehouse_id=world.warehouse_id,
+            status="shipped",
+            priority="normal",
+            ship_to_name="Someone",
+            subtotal=Decimal("10.00"),
+            created_at=day_at(day),
+        )
+        db.add(order)
+        db.flush()
+        if product is not None:
+            db.add(
+                OrderItem(
+                    order_id=order.id,
+                    line_number=1,
+                    product_id=product.id,
+                    quantity=units,
+                    unit_price=Decimal("1.00"),
+                )
+            )
+        shipment = Shipment(
+            order_id=order.id,
+            carrier_id=carrier_id,
+            tracking_number=f"DHL-{number}",
+            status="delivered" if delivered else "dispatched",
+            package_count=1,
+            weight_kg=Decimal("1.000"),
+            shipped_at=day_at(day),
+            expected_delivery_date=date(2026, 11, expected),
+            delivered_at=day_at(delivered) if delivered else None,
+        )
+        db.add(shipment)
+        db.flush()
+        db.add(
+            DelayPrediction(
+                order_id=order.id,
+                shipment_id=shipment.id,
+                probability=0.5,
+                risk_level=risk,
+                reasons=[],
+                model_version_id=world.models[UseCase.DELAY].id,
+                **stamp,
+            )
+        )
+    db.commit()
+
+
+def test_nothing_to_check_before_later_days(
+    client: TestClient, db_session: Session, world: World
+) -> None:
+    body = client.get("/api/v1/ml/accuracy", headers=as_(db_session, RoleName.STAFF)).json()
+    assert body == {"data_until": "2026-11-10", "demand": None, "delay": None}
+
+
+def test_demand_forecast_against_reality(
+    client: TestClient, db_session: Session, world: World
+) -> None:
+    backtest(db_session, world)
+    body = client.get("/api/v1/ml/accuracy", headers=as_(db_session, RoleName.STAFF)).json()
+    demand = body["demand"]
+    assert demand["as_of"] == "2026-11-05" and demand["model_name"] == "lstm"
+    assert (demand["first_day"], demand["last_day"]) == ("2026-11-06", "2026-11-10")
+    assert demand["days_checked"] == 5 and demand["days_forecast"] == 30
+    assert demand["products"] == 2
+    assert (demand["forecast_units"], demand["actual_units"]) == (15, 9)
+    # p1: forecast 2/day, ordered 3, 5, 0, 0, 0; p2: forecast 1/day, ordered 1 on day 3
+    assert demand["daily_error"] == pytest.approx(14 / 9)
+    assert demand["period_error"] == pytest.approx(6 / 9)  # |8 - 10| + |1 - 5|
+    assert demand["bias"] == pytest.approx(6 / 9)  # forecast too high
+    assert demand["range_coverage"] == pytest.approx(6 / 10)
+    assert demand["test_error"] is None  # no test metric for a span of 5 days or less
+    assert [(d["day"], d["forecast_units"], d["actual_units"]) for d in demand["daily"]] == [
+        ("2026-11-06", 3, 3),
+        ("2026-11-07", 3, 5),
+        ("2026-11-08", 3, 1),
+        ("2026-11-09", 3, 0),
+        ("2026-11-10", 3, 0),
+    ]
+
+
+def test_backtest_does_not_replace_the_current_predictions(
+    client: TestClient, db_session: Session, world: World
+) -> None:
+    backtest(db_session, world)
+    headers = as_(db_session, RoleName.STAFF)
+    p1 = world.products[0]
+    forecast = client.get(f"/api/v1/ml/demand-forecasts/{p1.id}", headers=headers).json()
+    assert forecast["days"][0]["day"] == "2026-11-11"  # the run as of 10 November
+    risks = client.get("/api/v1/ml/delay-risks", headers=headers).json()
+    assert risks["total"] == 1 and risks["items"][0]["as_of"] == "2026-11-10"
+    summary = client.get("/api/v1/ml/summary", headers=headers).json()
+    assert summary["forecast_units_7_days"] == 14
+    assert summary["forecast_error"] == pytest.approx(6 / 9)
+    assert summary["forecast_error_days"] == 5
+
+
+def test_delay_risk_against_reality(client: TestClient, db_session: Session, world: World) -> None:
+    backtest(db_session, world)
+    body = client.get("/api/v1/ml/accuracy", headers=as_(db_session, RoleName.MANAGER)).json()
+    delay = body["delay"]
+    assert delay["as_of"] == "2026-11-05" and delay["model_name"] == "lstm_events"
+    assert (delay["parcels"], delay["delivered"], delay["on_the_way"], delay["late"]) == (
+        4,
+        3,
+        1,
+        2,
+    )
+    assert delay["late_rate"] == pytest.approx(2 / 3)
+    assert delay["late_flagged"] == pytest.approx(0.5)  # one of the two late ones
+    assert [
+        (lv["risk_level"], lv["parcels"], lv["delivered"], lv["late"], lv["late_rate"])
+        for lv in delay["levels"]
+    ] == [("high", 1, 1, 1, 1.0), ("medium", 1, 1, 0, 0.0), ("low", 2, 1, 1, 1.0)]
+
+
+def test_test_error_for_the_checked_span(
+    client: TestClient, db_session: Session, world: World
+) -> None:
+    backtest(db_session, world)
+    for day in (11, 12):  # two more days with orders: 7 days checked
+        db_session.add(
+            Order(
+                order_number=f"SO-2026-0000{day}",
+                customer_id=world.order.customer_id,
+                warehouse_id=world.warehouse_id,
+                status="confirmed",
+                priority="normal",
+                ship_to_name="Someone",
+                subtotal=Decimal("1.00"),
+                created_at=day_at(day),
+            )
+        )
+    db_session.commit()
+    headers = as_(db_session, RoleName.STAFF)
+    body = client.get("/api/v1/ml/accuracy", headers=headers).json()
+    # The run as of 10 November is now checkable too, and it is the newest one.
+    assert body["data_until"] == "2026-11-12"
+    assert body["demand"]["as_of"] == "2026-11-10" and body["demand"]["days_checked"] == 2
+    db_session.execute(delete(DemandForecast).where(DemandForecast.as_of == AS_OF))
+    db_session.commit()
+    demand = client.get("/api/v1/ml/accuracy", headers=headers).json()["demand"]
+    assert demand["as_of"] == "2026-11-05" and demand["days_checked"] == 7
+    assert demand["test_error"] == 0.4  # the model's 7-day error on its test period
+
+
+def test_accuracy_access(client: TestClient, db_session: Session) -> None:
+    assert client.get("/api/v1/ml/accuracy").status_code == 401
+    customer = as_(db_session, RoleName.CUSTOMER)
+    assert client.get("/api/v1/ml/accuracy", headers=customer).status_code == 403
+    body = client.get("/api/v1/ml/accuracy", headers=as_(db_session, RoleName.MANAGER)).json()
+    assert body == {"data_until": None, "demand": None, "delay": None}

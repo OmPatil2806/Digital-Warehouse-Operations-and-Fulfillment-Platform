@@ -5,7 +5,7 @@ import { getMlSummary, mlKeys } from '../../api/mlApi'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { formatInteger, formatShortDate } from '../../utils/format'
 import { KpiCard } from '../dashboard/KpiCard'
-import { formatSecondsPerDay, formatUnits } from './mlFormat'
+import { formatProbability, formatSecondsPerDay, formatUnits } from './mlFormat'
 
 /** The dashboard's ML box: predicted stockouts, risky deliveries, coming demand, slotting. */
 export function MLSummaryCards() {
@@ -75,7 +75,18 @@ export function MLSummaryCards() {
           label="Demand next 7 days"
           isLoading={loading}
           value={`${formatUnits(s?.forecast_units_7_days ?? 0)} units`}
-          detail={`${formatUnits(s?.forecast_units_30_days ?? 0)} units in the next 30 days`}
+          detail={
+            <>
+              {formatUnits(s?.forecast_units_30_days ?? 0)} units in the next 30 days
+              {s?.forecast_error != null && (
+                <>
+                  <br />
+                  Forecast error {formatProbability(s.forecast_error)} on the last{' '}
+                  {s.forecast_error_days} days
+                </>
+              )}
+            </>
+          }
         />
         <KpiCard
           label="Slotting moves"

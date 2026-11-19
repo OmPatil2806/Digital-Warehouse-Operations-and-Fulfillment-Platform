@@ -16,6 +16,7 @@ Label: delivered on a later day than expected (only delivered shipments are used
 """
 
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -139,10 +140,16 @@ def _warehouse_fill(engine: Engine) -> pd.DataFrame:
     return moves[["wh", "day", "fill"]]
 
 
-def build_delay_set(engine: Engine, *, on_the_way: bool = False) -> DelaySet:
+def build_delay_set(
+    engine: Engine, *, on_the_way: bool = False, as_of: date | None = None
+) -> DelaySet:
     """Delivered shipments with their outcome (training), or with `on_the_way` the
     shipments not delivered yet (prediction; label NaN). The carrier history always uses
-    the delivered ones."""
+    the delivered ones.
+
+    With `as_of` (a backtest), the data is seen as on that day: "delivered" means
+    delivered on or before it, and "on the way" means dispatched by then but not
+    delivered yet (their outcome is only known later)."""
     shipments = read_frame(
         engine,
         "SELECT s.order_id, s.carrier_id, c.code AS carrier, s.package_count, s.weight_kg, "
@@ -241,7 +248,12 @@ def build_delay_set(engine: Engine, *, on_the_way: bool = False) -> DelaySet:
     wide[np.arange(n), offset + waited_flag * len(PRIORITIES) + priority.to_numpy(int)] = 1
     wide[np.arange(n), offset + 2 * len(PRIORITIES) + band] = 1
 
-    delivered = shipments["delivered_day"].notna().to_numpy()
+    delivered = shipments["delivered_day"].notna().to_numpy().copy()
+    dispatched = np.ones(len(shipments), bool)
+    if as_of is not None:
+        day = as_of.isoformat()
+        delivered &= (shipments["delivered_day"].fillna("9999") <= day).to_numpy()
+        dispatched = (shipments["shipped_day"] <= day).to_numpy()
     label = np.where(delivered, shipments["late"].to_numpy(), np.nan).astype("float32")
     full = DelaySet(
         numeric=numeric,
@@ -253,4 +265,4 @@ def build_delay_set(engine: Engine, *, on_the_way: bool = False) -> DelaySet:
         order_ids=shipments["order_id"].to_numpy(),
         category_names=list(one_hot.columns),
     )
-    return full.subset(np.flatnonzero(~delivered if on_the_way else delivered))
+    return full.subset(np.flatnonzero(dispatched & ~delivered if on_the_way else delivered))

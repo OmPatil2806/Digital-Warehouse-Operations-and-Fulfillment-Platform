@@ -95,6 +95,8 @@ describe('MLSummaryCards', () => {
       forecast_units_30_days: 0,
       slotting_pending: 0,
       slotting_seconds_saved_per_day: 0,
+      forecast_error: null,
+      forecast_error_days: 0,
     })
     renderWithAuth(<MLSummaryCards />, manager)
     expect(await screen.findByText(/No predictions yet/)).toBeInTheDocument()

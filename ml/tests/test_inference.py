@@ -6,6 +6,7 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+from datetime import timedelta
 from pathlib import Path
 from types import ModuleType
 
@@ -168,6 +169,53 @@ def test_score_stores_every_use_case_and_keeps_history(trained: Path, tmp_path: 
     assert len(latest_rows(engine, "movement_classification")) == second[0].rows == 50
 
 
+def test_backtest_scores_checkable_use_cases_as_of_an_earlier_day(
+    trained: Path, tmp_path: Path
+) -> None:
+    database = tmp_path / "backtest.db"
+    shutil.copy(trained, database)
+    engine = create_engine(sqlite_url(database))
+    _, last = history_range(engine)
+    as_of = last - timedelta(days=20)
+    original = keras_setup.ML_DIR
+    keras_setup.ML_DIR = trained.parent
+    try:
+        current = score(database, use_cases=["demand_forecasting"], report=lambda _: None)
+        backtest = score(database, as_of=as_of, report=lambda _: None)
+    finally:
+        keras_setup.ML_DIR = original
+    assert [r.use_case for r in backtest] == ["demand_forecasting", "delay_prediction"]
+    with Session(engine) as session:
+        table = RESULT_TABLES["demand_forecasting"]
+        old = session.scalars(select(table).where(table.as_of == as_of)).all()
+    days = sorted({r.day for r in old})
+    assert (days[0] - as_of).days == 1 and len(days) == 30  # forecasts the hidden days
+    # The application keeps showing the forecasts of the latest day, not the backtest.
+    assert {r.as_of for r in latest_rows(engine, "demand_forecasting")} == {last}
+    assert current[0].rows == len(latest_rows(engine, "demand_forecasting"))
+    # Delays: the parcels dispatched by then and not delivered by then.
+    on_the_way = read_frame(
+        engine,
+        "SELECT order_id FROM shipments WHERE date(shipped_at) <= :d AND "
+        "(delivered_at IS NULL OR date(delivered_at) > :d)".replace(":d", f"'{as_of}'"),
+    )
+    rows = latest_rows(engine, "delay_prediction")
+    assert rows and {r.as_of for r in rows} == {as_of}
+    assert {r.order_id for r in rows} == set(on_the_way.order_id)
+
+
+def test_backtest_rejects_other_use_cases_and_bad_days(trained: Path, tmp_path: Path) -> None:
+    database = tmp_path / "bad.db"
+    shutil.copy(trained, database)
+    first, last = history_range(create_engine(sqlite_url(database)))
+    with pytest.raises(ValueError, match="can be backtested"):
+        score(database, use_cases=["slotting"], as_of=last - timedelta(days=5))
+    with pytest.raises(ValueError, match="as_of must be"):
+        score(database, as_of=last + timedelta(days=1))
+    with pytest.raises(ValueError, match="as_of must be"):
+        score(database, as_of=first)
+
+
 def test_use_cases_without_a_model_are_skipped(with_orders: Simulated, tmp_path: Path) -> None:
     _, engine, _ = with_orders
     database = tmp_path / "untrained.db"
@@ -213,3 +261,22 @@ def test_script(script: ModuleType, with_orders: Simulated, tmp_path: Path, caps
     assert script.main(["--database", str(database), "--use-case", "slotting"]) == 0
     assert "No selected model for: slotting" in capsys.readouterr().out
     assert script.main(["--database", str(tmp_path / "missing.db")]) == 1
+
+
+def test_script_backtest(script: ModuleType, trained: Path, tmp_path: Path, capsys) -> None:
+    database = tmp_path / "script_backtest.db"
+    shutil.copy(trained, database)
+    original = keras_setup.ML_DIR
+    keras_setup.ML_DIR = trained.parent
+    try:
+        code = script.main(["--database", str(database), "--backtest", "15"])
+        bad = script.main(
+            ["--database", str(database), "--backtest", "15", "--use-case", "reorder"]
+        )
+    finally:
+        keras_setup.ML_DIR = original
+    out = capsys.readouterr()
+    assert code == 0 and "Backtest as of" in out.out
+    assert bad == 1 and "can be backtested" in out.err
+    with pytest.raises(SystemExit):
+        script.main(["--database", str(database), "--backtest", "0"])

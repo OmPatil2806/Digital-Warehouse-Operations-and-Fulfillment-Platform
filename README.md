@@ -523,7 +523,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 6: Dashboards & reporting**: role-specific KPI dashboards, reports and CSV export (`v0.6.0`) ✅
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
-- [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`) 🚧 *in progress: prediction tables, the scoring command (`scripts/score_models.py`) and the ML API (`/api/v1/ml`, approve/reject with audit) and the frontend building blocks (ML API client, ForecastChart, ReorderTable, MovementMatrix, SlottingList, RiskBadge, RecommendationList) the ML insights page (reorder, slotting, delay risk, movement and models tabs; approve/reject) and predictions where people work (forecast, movement class and related products on product pages, delay risk on orders, ML numbers on the dashboard, approved reorders drafting purchase orders) done; checking predictions against reality next*
+- [ ] **Phase 9: ML application integration**: predictions inside the application (`v0.9.0`) 🚧 *in progress: prediction tables, the scoring command (`scripts/score_models.py`) and the ML API (`/api/v1/ml`, approve/reject with audit) and the frontend building blocks (ML API client, ForecastChart, ReorderTable, MovementMatrix, SlottingList, RiskBadge, RecommendationList) the ML insights page (reorder, slotting, delay risk, movement and models tabs; approve/reject) and predictions where people work (forecast, movement class and related products on product pages, delay risk on orders, ML numbers on the dashboard, approved reorders drafting purchase orders) and checking predictions against reality (backtests with `scripts/score_models.py --backtest 30`, forecast error and late deliveries by risk level on the Models tab, forecast error on the dashboard) done; final checks and release next*
 - [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`)
 
 ---
@@ -587,7 +587,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── create_admin.py       # create the first administrator
 │   ├── generate_data.py      # generate, load and validate the two-year synthetic dataset
 │   ├── train_models.py       # train and compare the models of all six ML use cases
-│   ├── score_models.py       # score all use cases with the selected models into the prediction tables
+│   ├── score_models.py       # score all use cases into the prediction tables (--backtest DAYS: check them)
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)

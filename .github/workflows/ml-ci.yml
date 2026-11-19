@@ -80,3 +80,6 @@ jobs:
 
       - name: Score every use case with the selected models (smoke test)
         run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db"
+
+      - name: Backtest demand and delays as of 20 days before the end (smoke test)
+        run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db" --backtest 20

@@ -2,14 +2,20 @@
 
 Predictions are written by the offline scoring step (scripts/score_models.py); every
 scoring run adds rows with its own `scored_at`. The application shows the **latest run**
-of each use case. Decisions (approve / reject) are made on the rows themselves and
-audited.
+of each use case: the one with the latest `as_of`, the newest of those (a backtest made
+as of an earlier day never replaces the current predictions). Decisions (approve /
+reject) are made on the rows themselves and audited.
+
+Runs made before the last day with orders can be checked against what happened next
+(`check`): forecasts against the units then ordered, delay risks against when the
+parcels then arrived.
 """
 
-from datetime import UTC, datetime
+from collections import defaultdict
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.exceptions import ConflictError, NotFoundError, UnprocessableError
@@ -25,13 +31,23 @@ from app.models.ml_results import (
     ReorderRecommendation,
     SlottingRecommendation,
 )
-from app.models.order import Order
+from app.models.order import Order, OrderItem
+from app.models.shipment import Shipment
 from app.models.user import User
 from app.models.warehouse import Bin, Warehouse
 from app.schemas import ml as schemas
 from app.services.audit_service import AuditService
 
 FORECAST_TOTALS = (7, 14, 30)
+RISK_LEVELS = ("high", "medium", "low")
+
+
+def _ratio(part: float, whole: float) -> float | None:
+    return part / whole if whole else None
+
+
+def _day_start(day: date) -> datetime:
+    return datetime.combine(day, time.min, tzinfo=UTC)
 
 
 def _product(product: Product) -> schemas.ProductRef:
@@ -57,7 +73,19 @@ class MLService:
 
     # ------------------------------------------------------------------- runs
     def latest_run(self, table: type) -> datetime | None:
-        return self.db.scalar(select(func.max(table.scored_at)))
+        """`scored_at` of the current run: the latest `as_of`, the newest of those."""
+        return self.db.scalar(
+            select(table.scored_at).order_by(table.as_of.desc(), table.scored_at.desc()).limit(1)
+        )
+
+    def _checkable_run(self, table: type, until: date) -> datetime | None:
+        """The newest run made before `until`, so some of the days it predicts passed."""
+        return self.db.scalar(
+            select(table.scored_at)
+            .where(table.as_of < until)
+            .order_by(table.as_of.desc(), table.scored_at.desc())
+            .limit(1)
+        )
 
     def _scoring(self, table: type) -> schemas.ScoringInfo | None:
         """Which model made the latest run of a table, when, and for which day."""
@@ -444,39 +472,47 @@ class MLService:
 
     # ---------------------------------------------------------------- summary
     def summary(self) -> schemas.MLSummary:
-        """Headline numbers of the latest predictions for the dashboard."""
-        reorder = self._latest(ReorderRecommendation)
-        pending = (
-            []
-            if reorder is None
-            else list(
-                self.db.scalars(
-                    reorder.where(ReorderRecommendation.status == DecisionStatus.PENDING)
-                )
-            )
+        """Headline numbers of the latest predictions for the dashboard (sums in the
+        database: the latest run has tens of thousands of rows)."""
+        pending_r, pending_s = (
+            ReorderRecommendation.status == DecisionStatus.PENDING,
+            SlottingRecommendation.status == DecisionStatus.PENDING,
         )
-        delays = self._latest(DelayPrediction)
-        risky = [] if delays is None else list(self.db.scalars(delays))
-        slotting = self._latest(SlottingRecommendation)
-        moves = (
-            []
-            if slotting is None
-            else list(
-                self.db.scalars(
-                    slotting.where(SlottingRecommendation.status == DecisionStatus.PENDING)
-                )
-            )
+        stockouts_pending, stockouts_high = self._sums(
+            ReorderRecommendation,
+            func.count(),
+            func.sum(case((ReorderRecommendation.priority == "high", 1), else_=0)),
+            where=pending_r,
         )
-        forecast = self._latest(DemandForecast)
-        totals = {7: 0.0, 30: 0.0}
-        if forecast is not None:
-            rows = list(self.db.scalars(forecast))
-            if rows:
-                first = min(r.day for r in rows)
-                for days in totals:
-                    totals[days] = sum(
-                        r.expected_units for r in rows if (r.day - first).days < days
+        on_the_way, high_risk, at_risk = self._sums(
+            DelayPrediction,
+            func.count(),
+            func.sum(case((DelayPrediction.risk_level == "high", 1), else_=0)),
+            func.sum(case((DelayPrediction.risk_level != "low", 1), else_=0)),
+        )
+        saving = (
+            SlottingRecommendation.current_seconds_per_day
+            - SlottingRecommendation.recommended_seconds_per_day
+        )
+        slotting_pending, seconds_saved = self._sums(
+            SlottingRecommendation,
+            func.count(),
+            func.sum(func.coalesce(saving, 0)),
+            where=pending_s,
+        )
+        totals = dict.fromkeys((7, 30), 0.0)
+        newest = self.latest_run(DemandForecast)
+        if newest is not None:
+            first = self.db.scalar(
+                select(func.min(DemandForecast.day)).where(DemandForecast.scored_at == newest)
+            )
+            for days in totals:
+                totals[days] = self.db.scalar(
+                    select(func.coalesce(func.sum(DemandForecast.expected_units), 0.0)).where(
+                        DemandForecast.scored_at == newest,
+                        DemandForecast.day < first + timedelta(days=days),
                     )
+                )
         as_of = [
             info.as_of
             for info in (
@@ -484,21 +520,219 @@ class MLService:
             )
             if info is not None
         ]
+        until = self.data_until()
+        error, error_days = self.forecast_error(until) if until else (None, 0)
         return schemas.MLSummary(
             as_of=max(as_of) if as_of else None,
-            stockouts_high=sum(r.priority == "high" for r in pending),
-            stockouts_pending=len(pending),
-            orders_high_risk=sum(r.risk_level == "high" for r in risky),
-            orders_at_risk=sum(r.risk_level != "low" for r in risky),
-            orders_on_the_way=len(risky),
+            stockouts_high=stockouts_high,
+            stockouts_pending=stockouts_pending,
+            orders_high_risk=high_risk,
+            orders_at_risk=at_risk,
+            orders_on_the_way=on_the_way,
             forecast_units_7_days=totals[7],
             forecast_units_30_days=totals[30],
-            slotting_pending=len(moves),
-            slotting_seconds_saved_per_day=sum(
-                (r.current_seconds_per_day or 0) - r.recommended_seconds_per_day
-                for r in moves
-                if r.current_seconds_per_day is not None
-            ),
+            slotting_pending=slotting_pending,
+            slotting_seconds_saved_per_day=seconds_saved,
+            forecast_error=error,
+            forecast_error_days=error_days,
+        )
+
+    def _sums(self, table: type, *columns: Any, where: Any = None) -> list:
+        """Aggregates over the current run of a table (zeros when nothing is scored)."""
+        newest = self.latest_run(table)
+        if newest is None:
+            return [0] * len(columns)
+        query = select(*columns).where(table.scored_at == newest)
+        if where is not None:
+            query = query.where(where)
+        return [value or 0 for value in self.db.execute(query).one()]
+
+    # ------------------------------------------------- predictions vs reality
+    def data_until(self) -> date | None:
+        """The last day with orders: outcomes are known up to it."""
+        newest = self.db.scalar(select(func.max(Order.created_at)))
+        return None if newest is None else newest.astimezone(UTC).date()
+
+    def check(self) -> schemas.PredictionCheck:
+        until = self.data_until()
+        if until is None:
+            return schemas.PredictionCheck(data_until=None, demand=None, delay=None)
+        return schemas.PredictionCheck(
+            data_until=until, demand=self.demand_check(until), delay=self.delay_check(until)
+        )
+
+    def _model(self, version_id: int) -> ModelVersion | None:
+        return self.db.get(ModelVersion, version_id)
+
+    def _passed_days(self, scored_at: datetime, until: date) -> tuple[date, date]:
+        """The first and last forecast day of a run that have passed by `until`."""
+        first, last = self.db.execute(
+            select(func.min(DemandForecast.day), func.max(DemandForecast.day)).where(
+                DemandForecast.scored_at == scored_at, DemandForecast.day <= until
+            )
+        ).one()
+        return first, last
+
+    def _ordered(self, first: date, last: date, *columns: Any):
+        """Order lines of the orders placed from `first` to `last` (the orders are found
+        first: grouping a join of all order lines is slow on a large history)."""
+        orders = select(Order.id).where(
+            Order.created_at >= _day_start(first),
+            Order.created_at < _day_start(last + timedelta(days=1)),
+        )
+        return (
+            select(*columns)
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(OrderItem.order_id.in_(orders))
+        )
+
+    def forecast_error(self, until: date) -> tuple[float | None, int]:
+        """The period error of the latest checkable forecast and the days it covers
+        (the dashboard's "forecast error"; the same as `demand_check().period_error`)."""
+        scored_at = self._checkable_run(DemandForecast, until)
+        if scored_at is None:
+            return None, 0
+        first, last = self._passed_days(scored_at, until)
+        forecast = self.db.execute(
+            select(DemandForecast.product_id, func.sum(DemandForecast.expected_units))
+            .where(DemandForecast.scored_at == scored_at, DemandForecast.day <= until)
+            .group_by(DemandForecast.product_id)
+        ).all()
+        actual = dict(
+            self.db.execute(
+                self._ordered(
+                    first, last, OrderItem.product_id, func.sum(OrderItem.quantity)
+                ).group_by(OrderItem.product_id)
+            ).all()
+        )
+        wrong = sum(abs((actual.get(p) or 0) - units) for p, units in forecast)
+        ordered = sum((actual.get(p) or 0) for p, _ in forecast)
+        return _ratio(wrong, ordered), (last - first).days + 1
+
+    def demand_check(self, until: date) -> schemas.DemandAccuracy | None:
+        """The latest checkable forecast against the units ordered on its passed days."""
+        scored_at = self._checkable_run(DemandForecast, until)
+        if scored_at is None:
+            return None
+        rows = self.db.execute(
+            select(
+                DemandForecast.product_id,
+                DemandForecast.day,
+                DemandForecast.expected_units,
+                DemandForecast.low_units,
+                DemandForecast.high_units,
+                DemandForecast.as_of,
+                DemandForecast.model_version_id,
+            ).where(DemandForecast.scored_at == scored_at)
+        ).all()
+        as_of, version_id = rows[0].as_of, rows[0].model_version_id
+        days_forecast = len({r.day for r in rows})
+        rows = [r for r in rows if r.day <= until]
+        first_day, last_day = self._passed_days(scored_at, until)
+        actual: dict[tuple[int, date], float] = defaultdict(float)
+        ordered = self.db.execute(
+            self._ordered(
+                first_day, last_day, OrderItem.product_id, Order.created_at, OrderItem.quantity
+            )
+        )
+        for product_id, created_at, quantity in ordered:
+            actual[product_id, created_at.astimezone(UTC).date()] += quantity
+
+        daily_forecast: dict[date, float] = defaultdict(float)
+        daily_actual: dict[date, float] = defaultdict(float)
+        product_forecast: dict[int, float] = defaultdict(float)
+        product_actual: dict[int, float] = defaultdict(float)
+        abs_error = inside = 0.0
+        for r in rows:
+            units = actual.get((r.product_id, r.day), 0.0)
+            abs_error += abs(units - r.expected_units)
+            inside += r.low_units <= units <= r.high_units
+            daily_forecast[r.day] += r.expected_units
+            daily_actual[r.day] += units
+            product_forecast[r.product_id] += r.expected_units
+            product_actual[r.product_id] += units
+        forecast_units, actual_units = sum(daily_forecast.values()), sum(daily_actual.values())
+        period_abs = sum(abs(product_actual[p] - f) for p, f in product_forecast.items())
+        days_checked = (last_day - first_day).days + 1
+        model = self._model(version_id)
+        test_error = None
+        if model is not None:
+            for span in (30, 14, 7):
+                if span <= days_checked:
+                    test_error = model.metric(f"wape_{span}d_total", MetricSplit.TEST)
+                    break
+        return schemas.DemandAccuracy(
+            model_name=model.model_name if model else "unknown",
+            is_baseline=bool(model and model.is_baseline),
+            scored_at=scored_at,
+            as_of=as_of,
+            first_day=first_day,
+            last_day=last_day,
+            days_checked=days_checked,
+            days_forecast=days_forecast,
+            products=len(product_forecast),
+            forecast_units=forecast_units,
+            actual_units=actual_units,
+            daily_error=_ratio(abs_error, actual_units),
+            period_error=_ratio(period_abs, actual_units),
+            bias=_ratio(forecast_units - actual_units, actual_units),
+            range_coverage=_ratio(inside, len(rows)),
+            test_error=None if test_error is None else float(test_error),
+            daily=[
+                schemas.AccuracyDay(
+                    day=day, forecast_units=daily_forecast[day], actual_units=daily_actual[day]
+                )
+                for day in sorted(daily_forecast)
+            ],
+        )
+
+    def delay_check(self, until: date) -> schemas.DelayAccuracy | None:
+        """The latest checkable delay run against when its parcels were delivered."""
+        scored_at = self._checkable_run(DelayPrediction, until)
+        if scored_at is None:
+            return None
+        rows = self.db.execute(
+            select(
+                DelayPrediction.risk_level,
+                DelayPrediction.as_of,
+                DelayPrediction.model_version_id,
+                Shipment.delivered_at,
+                Shipment.expected_delivery_date,
+            )
+            .join(Shipment, Shipment.id == DelayPrediction.shipment_id)
+            .where(DelayPrediction.scored_at == scored_at)
+        ).all()
+        if not rows:
+            return None
+        counts = {level: {"parcels": 0, "delivered": 0, "late": 0} for level in RISK_LEVELS}
+        for r in rows:
+            level = counts[r.risk_level]
+            level["parcels"] += 1
+            if r.delivered_at is not None:
+                level["delivered"] += 1
+                level["late"] += r.delivered_at.astimezone(UTC).date() > r.expected_delivery_date
+        delivered = sum(c["delivered"] for c in counts.values())
+        late = sum(c["late"] for c in counts.values())
+        model = self._model(rows[0].model_version_id)
+        return schemas.DelayAccuracy(
+            model_name=model.model_name if model else "unknown",
+            is_baseline=bool(model and model.is_baseline),
+            scored_at=scored_at,
+            as_of=rows[0].as_of,
+            parcels=len(rows),
+            delivered=delivered,
+            on_the_way=len(rows) - delivered,
+            late=late,
+            late_rate=_ratio(late, delivered),
+            late_flagged=_ratio(counts["high"]["late"] + counts["medium"]["late"], late),
+            levels=[
+                schemas.DelayLevelCheck(
+                    risk_level=level,
+                    **c,
+                    late_rate=_ratio(c["late"], c["delivered"]),
+                )
+                for level, c in counts.items()
+            ],
         )
 
     # ---------------------------------------------------------------- helpers

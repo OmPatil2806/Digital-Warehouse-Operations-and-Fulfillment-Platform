@@ -195,3 +195,21 @@ def test_staff_and_customers_cannot_skip_their_role(client: TestClient, warehous
         f"{API}/shipments", json={"order_id": order_id, "carrier_id": w.carrier}, headers=w.staff
     )
     assert early.status_code in (409, 422), early.text
+
+
+def test_unknown_orders_and_retrying_reservations(client: TestClient, warehouse: Warehouse):
+    w = warehouse
+    assert client.get(f"{API}/orders/999", headers=w.manager).status_code == 404
+    assert client.post(f"{API}/orders/999/confirm", headers=w.manager).status_code == 404
+    receive(client, w, w.laptop, 1)
+    receive(client, w, w.mouse, 3)
+    order_id = place_order(client, w)["id"]  # 2 laptops, only 1 in stock
+    assert status_of(client, w.manager, order_id) == "partially_allocated"
+    # Retrying without new stock changes nothing; with it, the order is fully reserved.
+    retried = ok(client.post(f"{API}/orders/{order_id}/reserve", headers=w.manager))
+    assert retried["status"] == "partially_allocated"
+    receive(client, w, w.laptop, 1)  # a receipt fills waiting orders by itself
+    assert status_of(client, w.manager, order_id) == "inventory_reserved"
+    # A fully reserved order is not waiting for stock any more.
+    again = client.post(f"{API}/orders/{order_id}/reserve", headers=w.manager)
+    assert again.status_code == 409 and "wait for stock" in again.json()["detail"]

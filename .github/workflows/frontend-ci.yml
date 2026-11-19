@@ -52,8 +52,18 @@ jobs:
       - name: Type check (TypeScript)
         run: npm run typecheck
 
-      - name: Run tests (Vitest)
-        run: npm test
+      - name: Run tests with coverage (Vitest, fails below the minimums)
+        run: |
+          set -o pipefail
+          npm run test:coverage -- --coverage.reporter=text-summary | tee test-output.log
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "### Frontend test coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          sed -n '/Coverage summary/,/^=*$/p' test-output.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Production build (Vite)
         run: npm run build

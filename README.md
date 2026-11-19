@@ -587,7 +587,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 96 %, minimum 95 %) and end-to-end business scenarios (`backend/tests/integration/`: order to delivery and return, low stock to supplier delivery, ML reorder to received stock) done; more tests where coverage is weak next*
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) and a check that every API call of the web app matches a backend route done; security review next*
 
 ---
 
@@ -627,8 +627,9 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   │   ├── routes/           # AppRoutes and ProtectedRoute
 │   │   ├── types/            # TypeScript types mirroring API schemas
 │   │   ├── utils/            # helpers (roles, permissions, formatting, API errors)
-│   │   ├── test/             # Vitest setup, fixtures and render helpers
+│   │   ├── test/             # Vitest setup, fixtures, render helpers, apiRoutes.json (backend routes)
 │   │   └── App.tsx
+│   ├── tests/                # whole-app flows against a fake backend (login, roles, logout, sessions)
 │   ├── package.json
 │   └── vite.config.ts / vitest.config.ts / eslint.config.js
 ├── ml/
@@ -651,6 +652,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── generate_data.py      # generate, load and validate the two-year synthetic dataset
 │   ├── train_models.py       # train and compare the models of all six ML use cases
 │   ├── score_models.py       # score all use cases into the prediction tables (--backtest DAYS: check them)
+│   ├── export_api_routes.py  # list the backend routes for the frontend tests (frontend/src/test/apiRoutes.json)
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)
@@ -763,7 +765,8 @@ black --check .    # format check
 ### Frontend (from `frontend/`)
 
 ```bash
-npm test               # run tests (Vitest)
+npm test               # run tests (Vitest): src/ components and pages, tests/ whole-app flows
+npm run test:coverage  # with test coverage (report in coverage/index.html)
 npm run lint           # ESLint
 npm run typecheck      # TypeScript
 npm run format:check   # Prettier (use `npm run format` to auto-format)
@@ -776,8 +779,8 @@ Every push and pull request to `main` runs **GitHub Actions**:
 
 | Workflow | Runs when | Steps |
 |----------|-----------|-------|
-| Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest with coverage (fails below 95 %) → Alembic migrations → API smoke test |
-| Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest → Vite build |
+| Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest with coverage (fails below 96 %) → Alembic migrations → API smoke test |
+| Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest with coverage (fails below 90 % of lines) → Vite build |
 | ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → backtest |
 
 ---

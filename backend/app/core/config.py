@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # backend/app/core/config.py -> parents[3] is the project root
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
-DEFAULT_SECRET_KEY = "change-me-to-a-long-random-secret"
+DEFAULT_SECRET_KEY = "change-me-to-a-long-random-secret"  # noqa: S105 (refused in production)
 # Environments where the insecure default secret is tolerated.
 INSECURE_SECRET_ALLOWED_ENVS = {"development", "test"}
 MIN_SECRET_KEY_LENGTH = 32
@@ -42,7 +42,14 @@ class Settings(BaseSettings):
     # off for development/test (plain http://localhost), on everywhere else.
     cookie_secure: bool | None = None
 
-    # Comma-separated list, e.g. "http://localhost:5173,http://127.0.0.1:5173"
+    # Failed logins: after this many wrong passwords within the window, the account is
+    # locked for `login_lockout_minutes` (a client IP gets 4x as many tries).
+    login_max_failures: int = Field(default=5, ge=1, le=100)
+    login_window_minutes: int = Field(default=15, ge=1, le=24 * 60)
+    login_lockout_minutes: int = Field(default=15, ge=1, le=24 * 60)
+
+    # Comma-separated list, e.g. "http://localhost:5173,http://127.0.0.1:5173".
+    # Exact origins only: "*" is refused, because the refresh cookie is sent cross-origin.
     cors_origins: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(
@@ -63,6 +70,17 @@ class Settings(BaseSettings):
                 f"long when APP_ENV={self.app_env!r}. Generate one with: "
                 'python -c "import secrets; print(secrets.token_urlsafe(64))"'
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_cors_origins(self) -> "Settings":
+        """Credentials (the refresh cookie) may only go to named origins, never to "*"."""
+        for origin in self.cors_origin_list:
+            if origin == "*" or not origin.startswith(("http://", "https://")):
+                raise ValueError(
+                    f"CORS_ORIGINS must list exact origins such as http://localhost:5173, "
+                    f"not {origin!r}"
+                )
         return self
 
     @property

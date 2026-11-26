@@ -87,3 +87,13 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_login_throttle() -> Generator[None, None, None]:
+    """Every test starts without failed logins counted by earlier tests."""
+    from app.api.v1.auth import get_login_throttle
+
+    get_login_throttle().reset()
+    yield
+    get_login_throttle().reset()

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
+from app.core.security_headers import add_security_headers
 from app.exceptions.handlers import register_exception_handlers
 
 API_V1_PREFIX = "/api/v1"
@@ -29,12 +30,17 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
+    # Only the web app's own origins may call the API with credentials, and only with
+    # the methods and headers it uses.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+    add_security_headers(
+        app, https=settings.refresh_cookie_secure, auth_prefix=f"{API_V1_PREFIX}/auth"
     )
 
     register_exception_handlers(app)

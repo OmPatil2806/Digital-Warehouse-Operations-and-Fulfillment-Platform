@@ -7,7 +7,7 @@ Token handling:
   read. It is only sent to the /api/v1/auth endpoints.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Cookie, Request, Response, status
@@ -15,11 +15,30 @@ from fastapi.responses import JSONResponse
 
 from app.api.deps import CurrentUser, DbSession
 from app.core.config import get_settings
+from app.core.logging import get_logger
+from app.core.login_throttle import LoginThrottle
 from app.schemas.auth import LoginRequest, TokenResponse
 from app.schemas.user import UserResponse
 from app.services.auth_service import AuthError, AuthService, AuthTokens
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+logger = get_logger(__name__)
+
+_throttle: LoginThrottle | None = None
+
+
+def get_login_throttle() -> LoginThrottle:
+    """The process-wide failed-login counter, built from the settings on first use."""
+    global _throttle
+    if _throttle is None:
+        settings = get_settings()
+        _throttle = LoginThrottle(
+            max_failures=settings.login_max_failures,
+            window=timedelta(minutes=settings.login_window_minutes),
+            lockout=timedelta(minutes=settings.login_lockout_minutes),
+        )
+    return _throttle
+
 
 REFRESH_COOKIE_NAME = "refresh_token"
 REFRESH_COOKIE_PATH = "/api/v1/auth"  # the cookie is never sent to other endpoints
@@ -86,13 +105,31 @@ def _auth_error_response(error: AuthError, *, clear_cookie: bool = False) -> JSO
 def login(
     credentials: LoginRequest, request: Request, response: Response, db: DbSession
 ) -> TokenResponse | JSONResponse:
-    """Return an access token and set the refresh-token cookie."""
-    try:
-        tokens = AuthService(db).login(
-            credentials.normalized_email(), credentials.password, **_client_info(request)
+    """Return an access token and set the refresh-token cookie.
+
+    Too many wrong passwords lock the account (and the client) for a while: 429 with a
+    Retry-After header, even for the right password, until the lockout ends."""
+    email = credentials.normalized_email()
+    client = _client_info(request)
+    throttle = get_login_throttle()
+    wait = throttle.retry_after(email, client["ip_address"])
+    if wait:
+        minutes = max(1, round(wait / 60))
+        logger.warning("Login refused: too many failed attempts (ip %s)", client["ip_address"])
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "detail": f"Too many failed login attempts. Try again in {minutes} minute"
+                f"{'' if minutes == 1 else 's'}."
+            },
+            headers={"Retry-After": str(wait)},
         )
+    try:
+        tokens = AuthService(db).login(email, credentials.password, **client)
     except AuthError as error:
+        throttle.failed(email, client["ip_address"])
         return _auth_error_response(error)
+    throttle.succeeded(email)
     _set_refresh_cookie(response, tokens)
     return _token_response(tokens)
 

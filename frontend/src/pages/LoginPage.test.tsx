@@ -90,6 +90,24 @@ describe('LoginPage', () => {
     expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
   })
 
+  it('explains a temporary lockout after too many failed attempts', async () => {
+    const auth = makeAuth({
+      login: vi
+        .fn()
+        .mockRejectedValue(
+          apiError(429, 'Too many failed login attempts. Try again in 15 minutes.'),
+        ),
+    })
+    const { user } = renderLogin({ auth })
+
+    await user.type(screen.getByLabelText('Email'), 'admin@example.com')
+    await user.type(screen.getByLabelText('Password'), 'Demo-pass-123')
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Try again in 15 minutes')
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+  })
+
   it('disables the button and shows progress while signing in', async () => {
     let finishLogin: () => void = () => {}
     const auth = makeAuth({

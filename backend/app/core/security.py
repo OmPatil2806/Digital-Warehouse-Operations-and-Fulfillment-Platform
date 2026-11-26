@@ -23,7 +23,7 @@ from pwdlib.hashers.bcrypt import BcryptHasher
 
 from app.core.config import get_settings
 
-ACCESS_TOKEN_TYPE = "access"
+ACCESS_TOKEN_TYPE = "access"  # noqa: S105 (a token kind, not a secret)
 BCRYPT_MAX_PASSWORD_BYTES = 72  # bcrypt ignores (bcrypt 5 rejects) anything longer
 REFRESH_TOKEN_BYTES = 48  # 48 random bytes -> 64-character URL-safe string
 

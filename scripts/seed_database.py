@@ -98,7 +98,7 @@ from app.services.warehouse_service import WarehouseService  # noqa: E402
 
 SessionFactory = Callable[[], AbstractContextManager[Session]]
 
-DEMO_PASSWORD = "Demo-pass-123"
+DEMO_PASSWORD = "Demo-pass-123"  # noqa: S105 (documented demo login; refused outside development)
 
 # ------------------------------------------------------------------------------ data
 # fmt: off

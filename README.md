@@ -3,6 +3,7 @@
 [![Backend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/frontend-ci.yml)
 [![ML CI](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/ml-ci.yml)
+[![Security](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/OmPatil2806/Digital-Warehouse-Operations-and-Fulfillment-Platform/actions/workflows/security.yml)
 ![Version](https://img.shields.io/badge/version-v0.9.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![Node](https://img.shields.io/badge/node-22.22%2B-339933?logo=nodedotjs&logoColor=white)
@@ -81,6 +82,8 @@ Trained and compared in Phase 8 ([ML Experimentation](#ml-experimentation)), use
 - The frontend refreshes automatically on a `401` (one shared refresh for parallel requests) and restores the session after a page reload.
 - Passwords are hashed with **bcrypt** (via `pwdlib`). Policy: 8+ characters, max 72 bytes, at least one letter and one digit.
 - Outside `development`/`test`, the API refuses to start with the default `SECRET_KEY`.
+- **Failed logins**: 5 wrong passwords within 15 minutes lock the account for 15 minutes (HTTP 429; the login page says when to try again).
+- Every API response carries security headers, CORS allows only the web app's origin, and unexpected errors return a plain message with a reference instead of technical details. The full security review is in [docs/security.md](docs/security.md).
 
 ### Auth endpoints (`/api/v1/auth`)
 
@@ -587,7 +590,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) and a check that every API call of the web app matches a backend route done; security review next*
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset next*
 
 ---
 
@@ -598,7 +601,8 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 ├── .github/workflows/
 │   ├── backend-ci.yml        # lint, test, migrate and smoke-test the API
 │   ├── frontend-ci.yml       # lint, type-check, test and build the UI
-│   └── ml-ci.yml             # lint and test the data generator
+│   ├── ml-ci.yml             # lint and test the data generator, quick training, scoring and backtest
+│   └── security.yml          # dependency audits (pip-audit, npm audit): on changes and weekly
 ├── backend/
 │   ├── app/
 │   │   ├── main.py           # FastAPI application (CORS, error handlers, /api/v1 router)
@@ -654,12 +658,14 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── score_models.py       # score all use cases into the prediction tables (--backtest DAYS: check them)
 │   ├── export_api_routes.py  # list the backend routes for the frontend tests (frontend/src/test/apiRoutes.json)
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
+├── docs/
+│   └── security.md           # security review: each rule, how it is met, which test checks it
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)
 └── LICENSE
 ```
 
-Planned for later phases: in `ml/` the features, models, training and evaluation; and `docs/`.
+Planned for the rest of Phase 10: the other documents in `docs/` (architecture, API, database, ML, user guide).
 
 ---
 
@@ -779,9 +785,10 @@ Every push and pull request to `main` runs **GitHub Actions**:
 
 | Workflow | Runs when | Steps |
 |----------|-----------|-------|
-| Backend CI | `backend/**` or `scripts/**` changes | Ruff → Black → Pytest with coverage (fails below 96 %) → Alembic migrations → API smoke test |
+| Backend CI | `backend/**` or `scripts/**` changes | Ruff (with security rules) → Black → Pytest with coverage (fails below 96 %) → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest with coverage (fails below 90 % of lines) → Vite build |
 | ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → backtest |
+| Security | dependency files change, every Monday, or by hand | pip-audit (backend and ML packages) → npm audit (production bundle, then everything) |
 
 ---
 

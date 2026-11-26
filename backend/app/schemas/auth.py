@@ -28,5 +28,5 @@ class TokenResponse(BaseModel):
     """
 
     access_token: str
-    token_type: Literal["bearer"] = "bearer"
+    token_type: Literal["bearer"] = "bearer"  # noqa: S105 (the OAuth2 token type)
     expires_in: int = Field(description="Access token lifetime in seconds")

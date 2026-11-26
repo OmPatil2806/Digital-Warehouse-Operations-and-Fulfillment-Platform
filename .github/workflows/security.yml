@@ -1,0 +1,88 @@
+name: Security
+
+# Known vulnerabilities in the project's dependencies (Python and npm), and the web
+# app's production bundle. Runs when dependencies change, every Monday (new advisories
+# appear even when the code does not change), and on demand from the Actions tab.
+# The code itself is checked by Ruff's security rules (flake8-bandit) in Backend CI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/requirements*.txt"
+      - "ml/requirements*.txt"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/security.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/requirements*.txt"
+      - "ml/requirements*.txt"
+      - "frontend/package.json"
+      - "frontend/package-lock.json"
+      - ".github/workflows/security.yml"
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python dependencies (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements*.txt
+            ml/requirements.txt
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit==2.9.0
+
+      - name: Audit backend packages
+        run: pip-audit -r backend/requirements.txt -r backend/requirements-dev.txt --progress-spinner off
+
+      - name: Audit ML packages
+        run: pip-audit -r ml/requirements.txt --progress-spinner off
+
+  npm:
+    name: npm dependencies (npm audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (clean, from lockfile)
+        run: npm ci
+
+      - name: Audit the production bundle (what users' browsers load)
+        run: npm audit --omit=dev
+
+      - name: Audit everything, development tools included (moderate and above)
+        run: npm audit --audit-level=moderate

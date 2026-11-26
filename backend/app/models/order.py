@@ -110,6 +110,10 @@ class Order(IdMixin, TimestampMixin, Base):
         CheckConstraint(one_of("priority", OrderPriority), name="valid_priority"),
         CheckConstraint("subtotal >= 0", name="subtotal_not_negative"),
         Index("ix_orders_customer_id_created_at", "customer_id", "created_at"),
+        # Newest first (order list) and the dashboards' date filters (Phase 10 speed check).
+        Index("ix_orders_created_at", "created_at", "id"),
+        Index("ix_orders_shipped_at", "shipped_at"),
+        Index("ix_orders_delivered_at", "delivered_at"),
     )
 
     order_number: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)

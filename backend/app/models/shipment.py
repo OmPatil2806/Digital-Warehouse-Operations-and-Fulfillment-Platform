@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -71,6 +71,9 @@ class Shipment(IdMixin, TimestampMixin, Base):
         CheckConstraint(one_of("status", ShipmentStatus), name="valid_status"),
         CheckConstraint("package_count >= 1", name="packages_positive"),
         CheckConstraint("weight_kg > 0", name="weight_positive"),
+        # Newest first (shipment list) and the dashboards' delivery counts.
+        Index("ix_shipments_shipped_at", "shipped_at", "id"),
+        Index("ix_shipments_delivered_at", "delivered_at"),
     )
 
     order_id: Mapped[int] = mapped_column(

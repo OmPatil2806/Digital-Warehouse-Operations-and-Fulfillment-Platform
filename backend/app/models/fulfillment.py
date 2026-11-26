@@ -48,6 +48,7 @@ class PickingTask(IdMixin, TimestampMixin, Base):
             name="done_has_quantity",
         ),
         Index("ix_picking_tasks_order_id_sequence", "order_id", "sequence"),
+        Index("ix_picking_tasks_completed_at", "completed_at"),  # fulfillment dashboard
     )
 
     order_id: Mapped[int] = mapped_column(

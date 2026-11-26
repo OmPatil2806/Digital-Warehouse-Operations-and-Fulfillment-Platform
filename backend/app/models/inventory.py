@@ -168,6 +168,7 @@ class InventoryMovement(IdMixin, Base):
         Index("ix_inventory_movements_product_id_created_at", "product_id", "created_at"),
         Index("ix_inventory_movements_bin_id_created_at", "bin_id", "created_at"),
         Index("ix_inventory_movements_reference", "reference_type", "reference_id"),
+        Index("ix_inventory_movements_created_at", "created_at", "id"),  # newest first
     )
 
     movement_type: Mapped[str] = mapped_column(String(20), nullable=False)

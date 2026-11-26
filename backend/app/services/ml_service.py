@@ -627,30 +627,39 @@ class MLService:
         ).all()
         as_of, version_id = rows[0].as_of, rows[0].model_version_id
         days_forecast = len({r.day for r in rows})
-        rows = [r for r in rows if r.day <= until]
+        # Plain tuples (product, day, expected, low, high): much faster to loop over than
+        # named rows for the tens of thousands of product-days of a full forecast.
+        rows = [tuple(r[:5]) for r in rows if r.day <= until]
         first_day, last_day = self._passed_days(scored_at, until)
-        actual: dict[tuple[int, date], float] = defaultdict(float)
-        ordered = self.db.execute(
-            self._ordered(
-                first_day, last_day, OrderItem.product_id, Order.created_at, OrderItem.quantity
+        # Units ordered per product and day, added up by the database (order times are
+        # stored in UTC, so the stored date is the UTC day, as in the forecasts).
+        order_day = func.date(Order.created_at)
+        actual: dict[tuple[int, date], float] = {
+            (product_id, date.fromisoformat(day)): float(units)
+            for product_id, day, units in self.db.execute(
+                self._ordered(
+                    first_day,
+                    last_day,
+                    OrderItem.product_id,
+                    order_day,
+                    func.sum(OrderItem.quantity),
+                ).group_by(OrderItem.product_id, order_day)
             )
-        )
-        for product_id, created_at, quantity in ordered:
-            actual[product_id, created_at.astimezone(UTC).date()] += quantity
+        }
 
         daily_forecast: dict[date, float] = defaultdict(float)
         daily_actual: dict[date, float] = defaultdict(float)
         product_forecast: dict[int, float] = defaultdict(float)
         product_actual: dict[int, float] = defaultdict(float)
         abs_error = inside = 0.0
-        for r in rows:
-            units = actual.get((r.product_id, r.day), 0.0)
-            abs_error += abs(units - r.expected_units)
-            inside += r.low_units <= units <= r.high_units
-            daily_forecast[r.day] += r.expected_units
-            daily_actual[r.day] += units
-            product_forecast[r.product_id] += r.expected_units
-            product_actual[r.product_id] += units
+        for product_id, day, expected, low, high in rows:
+            units = actual.get((product_id, day), 0.0)
+            abs_error += abs(units - expected)
+            inside += low <= units <= high
+            daily_forecast[day] += expected
+            daily_actual[day] += units
+            product_forecast[product_id] += expected
+            product_actual[product_id] += units
         forecast_units, actual_units = sum(daily_forecast.values()), sum(daily_actual.values())
         period_abs = sum(abs(product_actual[p] - f) for p, f in product_forecast.items())
         days_checked = (last_day - first_day).days + 1

@@ -590,7 +590,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset next*
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML workflows next*
 
 ---
 
@@ -657,9 +657,11 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── train_models.py       # train and compare the models of all six ML use cases
 │   ├── score_models.py       # score all use cases into the prediction tables (--backtest DAYS: check them)
 │   ├── export_api_routes.py  # list the backend routes for the frontend tests (frontend/src/test/apiRoutes.json)
+│   ├── benchmark_api.py      # speed check: time the API behind every page on a (large) database
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── docs/
-│   └── security.md           # security review: each rule, how it is met, which test checks it
+│   ├── security.md           # security review: each rule, how it is met, which test checks it
+│   └── performance.md        # speed check on the full dataset: what was slow, the fixes, results
 ├── database/                 # local SQLite file (warehouse.db is not committed)
 ├── .env.example              # environment template (copy to .env)
 └── LICENSE
@@ -778,6 +780,14 @@ npm run typecheck      # TypeScript
 npm run format:check   # Prettier (use `npm run format` to auto-format)
 npm run build          # production build
 ```
+
+### Speed check (from the project root)
+
+```bash
+python scripts/benchmark_api.py --database database/warehouse_synthetic.db
+```
+
+Times the API calls behind every page on a generated dataset and flags any call over 500 ms (reports over 90 days: 1 s). Results on the full dataset: [docs/performance.md](docs/performance.md).
 
 ### Continuous Integration
 

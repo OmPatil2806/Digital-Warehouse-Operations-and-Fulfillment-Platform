@@ -86,6 +86,13 @@ def test_filters_return_exactly_the_matching_rows(
     assert ids(client, "orders", w.manager, status="delivered") == [a]
     assert ids(client, "orders", w.manager, customer_id=other.id) == [b]
     assert ids(client, "orders", w.manager, q="100%_") == []  # wildcards are plain text
+    # Any case, any part of the number, the digits alone, or text no number can contain.
+    number_a = ok(client.get(f"{API}/orders/{a}", headers=w.manager))["order_number"]
+    assert ids(client, "orders", w.manager, q=number_b.lower()) == [b]
+    assert ids(client, "orders", w.manager, q=number_b[:7].lower()) == [b, a]  # "so-2026"
+    assert ids(client, "orders", w.manager, q=number_a[-6:]) == [a]  # "000001"
+    assert ids(client, "orders", w.manager, q=number_a[3:]) == [a]  # "2026-000001"
+    assert ids(client, "orders", w.manager, q="retail") == [b]  # customer name only
     # A customer's filter cannot widen their view.
     assert ids(client, "orders", w.customer, customer_id=other.id) == [a]
 
@@ -108,6 +115,8 @@ def test_filters_return_exactly_the_matching_rows(
 
     # Shipments: by tracking number or order number, by status; customers see their own
     assert ids(client, "shipments", w.staff, q="track-a") == [shipment["id"]]
+    assert ids(client, "shipments", w.staff, q=number_a.lower()) == [shipment["id"]]
+    assert ids(client, "shipments", w.staff, q=number_b) == []  # B has not shipped
     assert ids(client, "shipments", w.staff, status="delivered") == [shipment["id"]]
     assert ids(client, "shipments", w.staff, status="dispatched") == []
     assert ids(client, "shipments", w.customer) == [shipment["id"]]

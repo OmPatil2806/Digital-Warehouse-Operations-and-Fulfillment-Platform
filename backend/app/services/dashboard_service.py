@@ -13,6 +13,7 @@ Sums of money are calculated per product in Python from exact `Decimal` prices, 
 with floating point.
 """
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -20,7 +21,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy import case, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.exceptions import UnprocessableError
 from app.models.audit import Alert, AlertSeverity
@@ -342,11 +343,16 @@ class DashboardService:
 
     def _on_hand_at(self, moment: datetime, stock: dict[int, "StockRow"]) -> dict[int, int]:
         """Units on hand per product at `moment`: today's stock minus later changes."""
+        # Grouping by `product_id + 0` (the same value) keeps SQLite from reading the whole
+        # movement history through the product index; it then finds the few recent
+        # movements through the created_at index instead (0.33 s -> a few ms on the full
+        # dataset).
+        product = (InventoryMovement.product_id + 0).label("product_id")
         later = dict(
             self.db.execute(
-                select(InventoryMovement.product_id, func.sum(InventoryMovement.on_hand_delta))
+                select(product, func.sum(InventoryMovement.on_hand_delta))
                 .where(InventoryMovement.created_at >= moment)
-                .group_by(InventoryMovement.product_id)
+                .group_by(product)
             ).all()
         )
         products = set(stock) | set(later)
@@ -362,40 +368,58 @@ class DashboardService:
         cancelled). Durations are measured in hours between two milestones of the
         same order, counted in the period of the later one.
         """
-        placed = self.db.scalars(select(Order.created_at).where(*period.contains(Order.created_at)))
-        shipped = self.db.execute(
-            select(Order.shipped_at, Order.confirmed_at).where(*period.contains(Order.shipped_at))
-        ).all()
-        delivered = self.db.execute(
-            select(Order.delivered_at, Order.created_at).where(*period.contains(Order.delivered_at))
-        ).all()
+
+        # Counted and measured by the database: reading every timestamp of a busy period
+        # into Python was most of the time on large data. (SQLite date functions; stored
+        # times are UTC, so date() is the UTC day.)
+        def per_day(column: Any) -> dict[date, int]:
+            day = func.date(column)
+            return {
+                date.fromisoformat(d): n
+                for d, n in self.db.execute(
+                    select(day, func.count()).where(*period.contains(column)).group_by(day)
+                )
+            }
+
+        def durations(end: Any, start: Any) -> list[timedelta]:
+            seconds = (func.julianday(end) - func.julianday(start)) * 86400
+            return [
+                timedelta(seconds=value)
+                for value in self.db.scalars(
+                    select(seconds).where(*period.contains(end), start.is_not(None))
+                )
+            ]
+
+        placed, shipped, delivered = (
+            per_day(Order.created_at),
+            per_day(Order.shipped_at),
+            per_day(Order.delivered_at),
+        )
         cancelled = (
             self.db.scalar(select(func.count(Order.id)).where(*period.contains(Order.cancelled_at)))
             or 0
         )
-
-        days = {
-            period.date_from
-            + timedelta(days=i): OrdersPerDay(
-                day=period.date_from + timedelta(days=i), placed=0, shipped=0, delivered=0
+        days = [
+            OrdersPerDay(
+                day=day,
+                placed=placed.get(day, 0),
+                shipped=shipped.get(day, 0),
+                delivered=delivered.get(day, 0),
             )
-            for i in range(period.days)
-        }
-        placed_count = 0
-        for created in placed:
-            days[created.date()].placed += 1
-            placed_count += 1
-        for when, _ in shipped:
-            days[when.date()].shipped += 1
-        for when, _ in delivered:
-            days[when.date()].delivered += 1
+            for day in (period.date_from + timedelta(days=i) for i in range(period.days))
+        ]
 
-        deliveries = self.db.execute(
-            select(Shipment.delivered_at, Shipment.expected_delivery_date).where(
-                *period.contains(Shipment.delivered_at)
+        in_period = period.contains(Shipment.delivered_at)
+        deliveries = self.db.scalar(select(func.count()).where(*in_period)) or 0
+        on_time = (
+            self.db.scalar(
+                select(func.count()).where(
+                    *in_period,
+                    func.date(Shipment.delivered_at) <= Shipment.expected_delivery_date,
+                )
             )
-        ).all()
-        on_time = sum(1 for when, expected in deliveries if when.date() <= expected)
+            or 0
+        )
 
         picks = dict(
             self.db.execute(
@@ -414,17 +438,15 @@ class DashboardService:
         return FulfillmentDashboard(
             period=period.period(),
             totals=FulfillmentTotals(
-                placed=placed_count,
-                shipped=len(shipped),
-                delivered=len(delivered),
+                placed=sum(placed.values()),
+                shipped=sum(shipped.values()),
+                delivered=sum(delivered.values()),
                 cancelled=cancelled,
             ),
-            per_day=list(days.values()),
-            fulfillment_time=duration_kpi(
-                end - start for end, start in shipped if start is not None
-            ),
-            cycle_time=duration_kpi(end - start for end, start in delivered),
-            on_time_delivery=rate_kpi(on_time, len(deliveries)),
+            per_day=days,
+            fulfillment_time=duration_kpi(durations(Order.shipped_at, Order.confirmed_at)),
+            cycle_time=duration_kpi(durations(Order.delivered_at, Order.created_at)),
+            on_time_delivery=rate_kpi(on_time, deliveries),
             picking_accuracy=rate_kpi(complete, complete + short),
             by_status=[
                 StatusCount(status=status.value, count=int(statuses.get(status.value, 0)))
@@ -447,16 +469,30 @@ class DashboardService:
         ).all()
         zone_of = {bin_id: zone_id for bin_id, _, _, _, zone_id in bins}
 
+        # Weight and volume of one unit per product, read once (not once per stock row).
+        unit_size = {
+            product_id: (weight, length * width * height)
+            for product_id, weight, length, width, height in self.db.execute(
+                select(
+                    Product.id,
+                    Product.weight_kg,
+                    Product.length_cm,
+                    Product.width_cm,
+                    Product.height_cm,
+                )
+            )
+        }
         load: dict[int, list[Decimal]] = {}  # bin -> [units, weight, volume]
-        for bin_id, units, product in self.db.execute(
-            select(Inventory.bin_id, Inventory.quantity_on_hand, Product)
-            .join(Product, Inventory.product_id == Product.id)
-            .where(Inventory.quantity_on_hand > 0)
-        ).all():
+        for bin_id, units, product_id in self.db.execute(
+            select(Inventory.bin_id, Inventory.quantity_on_hand, Inventory.product_id).where(
+                Inventory.quantity_on_hand > 0
+            )
+        ):
+            weight, volume = unit_size[product_id]
             entry = load.setdefault(bin_id, [Decimal(0), Decimal(0), Decimal(0)])
             entry[0] += units
-            entry[1] += product.weight_kg * units
-            entry[2] += product.volume_cm3 * units
+            entry[1] += weight * units
+            entry[2] += volume * units
 
         picks: dict[int, list[int]] = {}  # zone -> [picks, units]
         for bin_id, count, delta in self.db.execute(
@@ -532,7 +568,9 @@ class DashboardService:
             )
         ).all()
         open_pos = self.db.scalars(
-            select(PurchaseOrder).where(PurchaseOrder.status.in_(OPEN_PO_STATUSES))
+            select(PurchaseOrder)
+            .where(PurchaseOrder.status.in_(OPEN_PO_STATUSES))
+            .options(selectinload(PurchaseOrder.items))  # one query, not one per order
         ).all()
         with_orders = set(self.db.scalars(select(PurchaseOrder.supplier_id).distinct()))
         suppliers = [
@@ -694,16 +732,23 @@ class _Space:
 
 
 def duration_kpi(durations: Iterable[timedelta]) -> DurationKpi:
-    """Average and median in hours (1 decimal) of the given durations."""
-    hours = sorted(Decimal(d.total_seconds()) / 3600 for d in durations)
-    if not hours:
+    """Average and median in hours (1 decimal) of the given durations.
+
+    Sorted as floats: a long period has tens of thousands of orders."""
+    seconds = sorted(d.total_seconds() for d in durations)
+    if not seconds:
         return DurationKpi(orders=0, average_hours=None, median_hours=None)
-    middle = len(hours) // 2
-    median = hours[middle] if len(hours) % 2 else (hours[middle - 1] + hours[middle]) / 2
+    middle = len(seconds) // 2
+    median = seconds[middle] if len(seconds) % 2 else (seconds[middle - 1] + seconds[middle]) / 2
+    return duration_summary(len(seconds), math.fsum(seconds) / len(seconds), median)
+
+
+def duration_summary(count: int, average_seconds: float, median_seconds: float) -> DurationKpi:
+    """The KPI from a count and the average and median in seconds (hours, 1 decimal)."""
     return DurationKpi(
-        orders=len(hours),
-        average_hours=_ratio(sum(hours, Decimal("0")) / len(hours), 1),
-        median_hours=_ratio(median, 1),
+        orders=count,
+        average_hours=_ratio(Decimal(repr(average_seconds / 3600)), 1),
+        median_hours=_ratio(Decimal(repr(median_seconds / 3600)), 1),
     )
 
 

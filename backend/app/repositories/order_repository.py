@@ -1,8 +1,9 @@
 """List queries for customers, orders, fulfillment work, shipments and returns. Never commits."""
 
+import re
 from typing import Any
 
-from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.fulfillment import PackingTask, PickingTask
@@ -25,6 +26,22 @@ PRIORITY_RANK = case(
 def _like(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"%{escaped}%"
+
+
+# Order numbers look like SO-2026-000123 (OrderService._next_order_number).
+_ORDER_NUMBER_CHARS = re.compile(r"[SO0-9-]+")
+
+
+def _order_number_matches(q: str) -> Any:
+    """Condition "the order number contains `q`" (case-insensitive), or None when no
+    order number can contain it. Uses the order-number index where it can: text that
+    starts with "SO-" can only match at the start of a number."""
+    text = q.strip().upper()
+    if not _ORDER_NUMBER_CHARS.fullmatch(text):
+        return None  # e.g. a customer name or a tracking number
+    if text.startswith("SO-"):
+        return and_(Order.order_number >= text, Order.order_number < text + "\uffff")
+    return Order.order_number.ilike(_like(text), escape="\\")
 
 
 class OrderRepository:
@@ -67,14 +84,18 @@ class OrderRepository:
         """Newest first."""
         query = select(Order).options(selectinload(Order.items), selectinload(Order.customer))
         if q:
+            # The matching customers are found first (a small table); joining every
+            # order to its customer to compare names was the slow part on large data.
             pattern = _like(q)
-            query = query.join(Customer, Order.customer_id == Customer.id).where(
+            customers = select(Customer.id).where(
                 or_(
-                    Order.order_number.ilike(pattern, escape="\\"),
                     Customer.name.ilike(pattern, escape="\\"),
                     Customer.code.ilike(pattern, escape="\\"),
                 )
             )
+            number = _order_number_matches(q)
+            by_customer = Order.customer_id.in_(customers)
+            query = query.where(by_customer if number is None else or_(number, by_customer))
         if status is not None:
             query = query.where(Order.status == status)
         if customer_id is not None:
@@ -125,18 +146,20 @@ class OrderRepository:
         customer_id: int | None = None,
         q: str | None = None,
     ) -> tuple[list[Shipment], int]:
-        query = select(Shipment).join(Order, Shipment.order_id == Order.id)
+        query = select(Shipment)
         if status is not None:
             query = query.where(Shipment.status == status)
         if customer_id is not None:
-            query = query.where(Order.customer_id == customer_id)
-        if q:
-            pattern = _like(q)
             query = query.where(
-                or_(
-                    Shipment.tracking_number.ilike(pattern, escape="\\"),
-                    Order.order_number.ilike(pattern, escape="\\"),
-                )
+                Shipment.order_id.in_(select(Order.id).where(Order.customer_id == customer_id))
+            )
+        if q:
+            by_tracking = Shipment.tracking_number.ilike(_like(q), escape="\\")
+            number = _order_number_matches(q)
+            query = query.where(
+                by_tracking
+                if number is None
+                else or_(by_tracking, Shipment.order_id.in_(select(Order.id).where(number)))
             )
         return self._page(query, [Shipment.shipped_at.desc(), Shipment.id.desc()], offset, limit)
 

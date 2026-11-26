@@ -504,7 +504,12 @@ From the project root, after training (`python scripts/train_models.py`):
 python scripts/score_models.py                         # all six use cases, as of the last day of data
 python scripts/score_models.py --use-case reorder      # only some use cases
 python scripts/score_models.py --backtest 30           # check: forecasts and delays as of 30 days earlier
+python scripts/check_models.py                         # models load; predictions complete and valid
 ```
+
+`check_models.py` checks that every selected network loads from its saved file and gives finite outputs of the right shape. It also checks that the stored predictions cover what they should (every product, all 30 forecast days, every parcel on its way, ranks without gaps) with finite, consistent values. ML CI runs it after scoring and fails if a check fails.
+
+**Training on GitHub**: the *Train models* workflow (Actions tab → *Train models* → *Run workflow*) generates a dataset of the chosen size (small, medium or full), trains and compares all six use cases, scores, checks and backtests. The comparison reports and the trained `.keras` models can then be downloaded from the run's page for 30 days.
 
 Every run adds rows (`scored_at`, `as_of`) and keeps the earlier ones. The application shows the run with the latest `as_of`, so a backtest never replaces the current predictions. On the full dataset scoring takes a few minutes on a CPU, and the backtest about a minute.
 
@@ -590,7 +595,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML workflows next*
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML checks and workflows (`scripts/check_models.py` in ML CI: models load, predictions complete and valid; *Train models* workflow started by hand, reports and models as downloads) done; release workflow next*
 
 ---
 
@@ -602,7 +607,8 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── backend-ci.yml        # lint, test, migrate and smoke-test the API
 │   ├── frontend-ci.yml       # lint, type-check, test and build the UI
 │   ├── ml-ci.yml             # lint and test the data generator, quick training, scoring and backtest
-│   └── security.yml          # dependency audits (pip-audit, npm audit): on changes and weekly
+│   ├── security.yml          # dependency audits (pip-audit, npm audit): on changes and weekly
+│   └── train-models.yml      # full training run, started by hand; reports and models as downloads
 ├── backend/
 │   ├── app/
 │   │   ├── main.py           # FastAPI application (CORS, error handlers, /api/v1 router)
@@ -658,6 +664,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── score_models.py       # score all use cases into the prediction tables (--backtest DAYS: check them)
 │   ├── export_api_routes.py  # list the backend routes for the frontend tests (frontend/src/test/apiRoutes.json)
 │   ├── benchmark_api.py      # speed check: time the API behind every page on a (large) database
+│   ├── check_models.py       # check the selected models load and their predictions are valid
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── docs/
 │   ├── security.md           # security review: each rule, how it is met, which test checks it
@@ -797,8 +804,9 @@ Every push and pull request to `main` runs **GitHub Actions**:
 |----------|-----------|-------|
 | Backend CI | `backend/**` or `scripts/**` changes | Ruff (with security rules) → Black → Pytest with coverage (fails below 96 %) → Alembic migrations → API smoke test |
 | Frontend CI | `frontend/**` changes | ESLint → Prettier → TypeScript → Vitest with coverage (fails below 90 % of lines) → Vite build |
-| ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → backtest |
+| ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → check the models and predictions → backtest |
 | Security | dependency files change, every Monday, or by hand | pip-audit (backend and ML packages) → npm audit (production bundle, then everything) |
+| Train models | started by hand (Actions tab) | generate a small, medium or full dataset → train and compare all six use cases → score → check → backtest → reports and models as downloads |
 
 ---
 

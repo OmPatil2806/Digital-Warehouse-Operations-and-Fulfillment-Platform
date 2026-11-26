@@ -1,0 +1,118 @@
+name: Train models
+
+# A full training run on GitHub, started by hand from the Actions tab ("Run workflow").
+# It generates a dataset of the chosen size, trains and compares all six use cases,
+# scores them with the selected models, checks the models and their predictions, and
+# backtests forecasts and delivery risks. The comparison reports and the trained models
+# are kept as downloads ("Artifacts" on the run's page) for 30 days.
+#
+# Duration on a GitHub runner (4 cores, no GPU): the small dataset takes minutes; the
+# full one needs about an hour of training alone (measured on a 4-core PC), so allow
+# about two hours. The run stops after five hours at most.
+
+on:
+  workflow_dispatch:
+    inputs:
+      size:
+        description: "Dataset size"
+        type: choice
+        options: [small, medium, full]
+        default: medium
+      quick:
+        description: "Quick run (1 epoch each: checks the pipeline, not the models)"
+        type: boolean
+        default: false
+      use_cases:
+        description: "Only these use cases (space-separated, empty = all six)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: train-models
+  cancel-in-progress: false
+
+jobs:
+  train:
+    name: Train on the ${{ inputs.size }} dataset
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: ml
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            ml/requirements.txt
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate and validate the dataset
+        env:
+          SIZE: ${{ inputs.size }} # passed as a variable, never pasted into the script
+        run: |
+          python ../scripts/generate_data.py --size "$SIZE" --database "$RUNNER_TEMP/synthetic.db" --no-demo-users
+          cat "${{ runner.temp }}/synthetic_validation.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Train and compare the models
+        env:
+          QUICK: ${{ inputs.quick }}
+          USE_CASES: ${{ inputs.use_cases }}
+        run: |
+          args=(--database "$RUNNER_TEMP/synthetic.db")
+          if [ "$QUICK" = "true" ]; then args+=(--quick); fi
+          if [ -n "$USE_CASES" ]; then read -ra chosen <<< "$USE_CASES"; args+=(--use-case "${chosen[@]}"); fi
+          python ../scripts/train_models.py "${args[@]}"
+          cat evaluation/reports/overview.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Score with the selected models
+        run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db"
+
+      - name: Check the models and their predictions
+        env:
+          USE_CASES: ${{ inputs.use_cases }}
+        run: |
+          set -o pipefail
+          args=(--database "$RUNNER_TEMP/synthetic.db")
+          if [ -n "$USE_CASES" ]; then read -ra chosen <<< "$USE_CASES"; args+=(--use-case "${chosen[@]}"); fi
+          python ../scripts/check_models.py "${args[@]}" | tee "${{ runner.temp }}/checks.txt"
+          { echo "### Model and prediction checks"; echo '```'; cat "${{ runner.temp }}/checks.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Backtest forecasts and delivery risks (30 days)
+        if: inputs.use_cases == ''
+        run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db" --backtest 30
+
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: model-reports-${{ inputs.size }}
+          path: |
+            ml/evaluation/reports/*.md
+            ${{ runner.temp }}/synthetic_validation.md
+            ${{ runner.temp }}/checks.txt
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Keep the trained models
+        uses: actions/upload-artifact@v7
+        with:
+          name: trained-models-${{ inputs.size }}
+          path: ml/artifacts/
+          if-no-files-found: warn
+          retention-days: 30

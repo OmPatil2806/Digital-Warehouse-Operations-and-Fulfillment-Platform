@@ -9,6 +9,7 @@ on:
       - "scripts/generate_data.py"
       - "scripts/train_models.py"
       - "scripts/score_models.py"
+      - "scripts/check_models.py"
       - "scripts/seed_database.py"
       - ".github/workflows/ml-ci.yml"
   pull_request:
@@ -19,6 +20,7 @@ on:
       - "scripts/generate_data.py"
       - "scripts/train_models.py"
       - "scripts/score_models.py"
+      - "scripts/check_models.py"
       - "scripts/seed_database.py"
       - ".github/workflows/ml-ci.yml"
   workflow_dispatch:
@@ -80,6 +82,12 @@ jobs:
 
       - name: Score every use case with the selected models (smoke test)
         run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db"
+
+      - name: Check the selected models load and their predictions are complete and valid
+        run: |
+          set -o pipefail
+          python ../scripts/check_models.py --database "$RUNNER_TEMP/synthetic.db" | tee "$RUNNER_TEMP/checks.txt"
+          { echo "### Model and prediction checks"; echo '```'; cat "$RUNNER_TEMP/checks.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Backtest demand and delays as of 20 days before the end (smoke test)
         run: python ../scripts/score_models.py --database "$RUNNER_TEMP/synthetic.db" --backtest 20

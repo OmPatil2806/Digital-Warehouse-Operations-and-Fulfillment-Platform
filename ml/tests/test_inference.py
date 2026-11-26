@@ -280,3 +280,147 @@ def test_script_backtest(script: ModuleType, trained: Path, tmp_path: Path, caps
     assert bad == 1 and "can be backtested" in out.err
     with pytest.raises(SystemExit):
         script.main(["--database", str(database), "--backtest", "0"])
+
+
+# ------------------------------------------------------------------------ checks
+@pytest.fixture(scope="module")
+def scored(trained: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The trained small dataset, scored with every selected model."""
+    database = tmp_path_factory.mktemp("scored") / "scored.db"
+    shutil.copy(trained, database)
+    original = keras_setup.ML_DIR
+    keras_setup.ML_DIR = trained.parent
+    try:
+        score(database, report=lambda _: None)
+    finally:
+        keras_setup.ML_DIR = original
+    return database
+
+
+def run_checks(database: Path, ml_dir: Path, use_cases: list[str] | None = None):
+    from inference.checks import check
+
+    original = keras_setup.ML_DIR
+    keras_setup.ML_DIR = ml_dir
+    engine = create_engine(sqlite_url(database))
+    try:
+        return {r.use_case: r for r in check(engine, use_cases)}
+    finally:
+        keras_setup.ML_DIR = original
+        engine.dispose()
+
+
+def broken_copy(scored: Path, tmp_path: Path, sql: str) -> Path:
+    database = tmp_path / "broken.db"
+    shutil.copy(scored, database)
+    engine = create_engine(sqlite_url(database))
+    with engine.begin() as connection:
+        connection.exec_driver_sql(sql)
+    engine.dispose()
+    return database
+
+
+def test_checks_pass_after_scoring(scored: Path, trained: Path) -> None:
+    results = run_checks(scored, trained.parent)
+    assert set(results) == {u.name for u in USE_CASES}
+    assert all(r.ok for r in results.values()), {u: r.problems for u, r in results.items()}
+    assert results["demand_forecasting"].rows == 50 * 30
+
+
+@pytest.mark.parametrize(
+    ("use_case", "sql", "problem"),
+    [
+        (
+            "demand_forecasting",
+            "DELETE FROM demand_forecasts WHERE id = (SELECT MAX(id) FROM demand_forecasts)",
+            "without exactly the 30 days",
+        ),
+        (
+            "recommendation",
+            "UPDATE product_recommendations SET score = 9e999 "
+            "WHERE id = (SELECT MIN(id) FROM product_recommendations)",
+            "not a finite number",
+        ),
+        (
+            "recommendation",
+            "DELETE FROM product_recommendations WHERE rank = 2",
+            "ranks with gaps",
+        ),
+        (
+            "movement_classification",
+            "DELETE FROM movement_classifications WHERE id = "
+            "(SELECT MIN(id) FROM movement_classifications)",
+            "classes for 50 products",
+        ),
+        (
+            "slotting",
+            "UPDATE slotting_recommendations SET recommended_seconds_per_day = "
+            "current_seconds_per_day + 1 WHERE current_seconds_per_day IS NOT NULL",
+            "does not save picking time",
+        ),
+        (
+            "delay_prediction",
+            "DELETE FROM delay_predictions WHERE id = (SELECT MIN(id) FROM delay_predictions)",
+            "parcels",
+        ),
+    ],
+)
+def test_checks_find_broken_predictions(
+    scored: Path, trained: Path, tmp_path: Path, use_case: str, sql: str, problem: str
+) -> None:
+    database = broken_copy(scored, tmp_path, sql)
+    result = run_checks(database, trained.parent, [use_case])[use_case]
+    assert not result.ok and any(problem in p for p in result.problems), result.problems
+
+
+def test_checks_find_missing_predictions_and_models(scored: Path, trained: Path, tmp_path: Path):
+    database = broken_copy(scored, tmp_path, "DELETE FROM demand_forecasts")
+    result = run_checks(database, trained.parent, ["demand_forecasting"])["demand_forecasting"]
+    assert "no predictions from the selected model" in result.problems[0]
+    other = tmp_path / "no_models"
+    other.mkdir()
+    database = broken_copy(scored, other, "UPDATE model_versions SET status = 'candidate'")
+    results = run_checks(database, trained.parent)
+    assert all(r.problems == ["no selected model"] for r in results.values())
+
+
+def test_a_model_file_that_does_not_load_is_reported(trained: Path, tmp_path: Path) -> None:
+    from inference.checks import check_model_loads
+
+    network = models_of(trained, "demand_forecasting")["network"]
+    engine = create_engine(sqlite_url(trained))
+    first, last = history_range(engine)
+    engine.dispose()
+    copy = tmp_path / network.artifact_path
+    copy.parent.mkdir(parents=True)
+    copy.write_bytes(b"not a keras file")
+    original = keras_setup.ML_DIR
+    keras_setup.ML_DIR = tmp_path
+    try:
+        problems = check_model_loads(network, Context(network, first, last))
+    finally:
+        keras_setup.ML_DIR = original
+    assert problems and problems[0].startswith("model file does not load")
+    assert check_model_loads(models_of(trained, "demand_forecasting")["baseline"], None) == []
+
+
+def test_check_script(trained: Path, scored: Path, tmp_path: Path, capsys) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "check_models_script", SCRIPT.parent / "check_models.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    original = keras_setup.ML_DIR
+    keras_setup.ML_DIR = trained.parent
+    try:
+        good = module.main(["--database", str(scored)])
+        bad = module.main(
+            ["--database", str(broken_copy(scored, tmp_path, "DELETE FROM demand_forecasts"))]
+        )
+    finally:
+        keras_setup.ML_DIR = original
+    out = capsys.readouterr().out
+    assert good == 0 and "6 of 6 use cases passed" in out
+    assert bad == 1 and "5 of 6 use cases passed" in out
+    assert module.main(["--database", str(tmp_path / "missing.db")]) == 1

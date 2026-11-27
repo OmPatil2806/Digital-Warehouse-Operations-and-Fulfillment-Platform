@@ -34,6 +34,8 @@ OPEN_PICKING_STATUSES = (PickingTaskStatus.PENDING.value, PickingTaskStatus.IN_P
 
 
 class PickingTask(IdMixin, TimestampMixin, Base):
+    """Picking one order line from one bin: where to go, what to take, what was found."""
+
     __tablename__ = "picking_tasks"
     __table_args__ = (
         CheckConstraint(one_of("status", PickingTaskStatus), name="valid_status"),

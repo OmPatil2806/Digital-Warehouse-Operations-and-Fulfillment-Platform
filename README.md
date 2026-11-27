@@ -18,6 +18,19 @@ The platform manages products, suppliers, physical storage locations, inventory,
 
 ---
 
+## Documentation
+
+| | |
+|---|---|
+| [User guide](docs/user-guide.md) | what each role does in the web app, step by step |
+| [Architecture](docs/architecture.md) | the parts of the platform and how they work together |
+| [API](docs/api.md) | login, roles, conventions and every endpoint ([OpenAPI](docs/openapi.json); interactive at `/docs` while the API runs) |
+| [Database](docs/database.md) | design rules, a diagram per area, every table |
+| [Machine learning](docs/ml.md) | the six use cases from data to dashboard |
+| [Security](docs/security.md) · [Performance](docs/performance.md) | the security review and the speed check |
+
+---
+
 ## Problems Addressed
 
 | # | Problem | How the platform solves it |
@@ -110,12 +123,14 @@ In the web app, administrators manage accounts on the **Users** page (create, ed
 
 ### Roles
 
-| Role | Responsibilities | Sees in the app (pages arrive in later phases) |
-|------|------------------|------------------------------------------------|
-| **Admin** | Users, roles, settings, audit, ML models | Everything (admins pass every role check) |
-| **Manager** | KPIs, approvals, ML recommendations | Products, Suppliers, Warehouse layout, Inventory, Orders, Fulfillment, Shipments, Alerts, ML insights |
-| **Staff** | Receiving, picking, packing, scanning | Products, Warehouse layout, Inventory, Orders, Fulfillment, Shipments |
-| **Customer** | Placing and tracking orders | Orders, Shipments |
+| Role | Responsibilities | Sees in the app |
+|------|------------------|-----------------|
+| **Admin** | Users, audit, everything else | Every page, plus Users and Audit log (admins pass every role check) |
+| **Manager** | Master data, approvals, purchasing, KPIs, ML decisions | Dashboard, Products, Suppliers, Warehouse layout, Inventory, Purchase orders, Orders, Fulfillment, Shipments, Alerts, Reports, ML insights |
+| **Staff** | Receiving, picking, packing, shipping, counting | The manager's pages except Suppliers; reads master data, stock losses wait for a manager |
+| **Customer** | Placing and tracking their own orders | Dashboard, My orders, Shipments and returns (their own) |
+
+Step by step for each role: [docs/user-guide.md](docs/user-guide.md).
 
 The backend enforces roles with `require_roles(...)` on each endpoint; the frontend hides navigation and guards routes with `<ProtectedRoute roles={[...]}>`.
 
@@ -595,7 +610,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML checks and workflows (`scripts/check_models.py` in ML CI: models load, predictions complete and valid; *Train models* workflow started by hand, reports and models as downloads) done; release workflow (*Delivery*: every push builds and smoke-tests the package; a version tag runs all tests and publishes a GitHub Release) done; documentation next*
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML checks and workflows (`scripts/check_models.py` in ML CI: models load, predictions complete and valid; *Train models* workflow started by hand, reports and models as downloads) done; release workflow (*Delivery*: every push builds and smoke-tests the package; a version tag runs all tests and publishes a GitHub Release) done; documentation ([docs/](docs/README.md): user guide, architecture, API with generated endpoint list and OpenAPI file, database with generated diagrams and table reference, ML) done; demo scenario next*
 
 ---
 
@@ -667,8 +682,14 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── benchmark_api.py      # speed check: time the API behind every page on a (large) database
 │   ├── check_models.py       # check the selected models load and their predictions are valid
 │   ├── build_release.py      # build the release zip (project + built web app + install guide + checksum)
+│   ├── generate_docs.py      # regenerate docs/openapi.json and the reference parts of api.md and database.md
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
-├── docs/
+├── docs/                     # documentation (index: docs/README.md)
+│   ├── user-guide.md         # what each role does in the web app, step by step
+│   ├── architecture.md       # the parts of the platform and how they work together
+│   ├── api.md, openapi.json  # the API: login, roles, conventions, every endpoint (generated list)
+│   ├── database.md           # design rules, diagrams and every table (generated reference)
+│   ├── ml.md                 # the six ML use cases from data to dashboard
 │   ├── security.md           # security review: each rule, how it is met, which test checks it
 │   └── performance.md        # speed check on the full dataset: what was slow, the fixes, results
 ├── database/                 # local SQLite file (warehouse.db is not committed)
@@ -676,7 +697,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 └── LICENSE
 ```
 
-Planned for the rest of Phase 10: the other documents in `docs/` (architecture, API, database, ML, user guide).
+Planned for the rest of Phase 10: the demo scenario and the final release.
 
 ---
 

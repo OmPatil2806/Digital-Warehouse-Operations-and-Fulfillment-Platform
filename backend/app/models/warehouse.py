@@ -46,6 +46,8 @@ def build_location_code(
 
 
 class Warehouse(IdMixin, TimestampMixin, Base):
+    """A warehouse site, the top of the location hierarchy."""
+
     __tablename__ = "warehouses"
 
     code: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # WH01
@@ -60,6 +62,8 @@ class Warehouse(IdMixin, TimestampMixin, Base):
 
 
 class Zone(IdMixin, TimestampMixin, Base):
+    """An area of a warehouse with one purpose (e.g. picking, bulk, returns)."""
+
     __tablename__ = "zones"
     __table_args__ = (
         UniqueConstraint("warehouse_id", "code"),
@@ -85,6 +89,8 @@ class Zone(IdMixin, TimestampMixin, Base):
 
 
 class Rack(IdMixin, TimestampMixin, Base):
+    """A rack in a zone, with its walking distance to the packing area."""
+
     __tablename__ = "racks"
     __table_args__ = (
         UniqueConstraint("zone_id", "code"),
@@ -109,6 +115,8 @@ class Rack(IdMixin, TimestampMixin, Base):
 
 
 class Shelf(IdMixin, TimestampMixin, Base):
+    """A level of a rack (level 1 is the floor)."""
+
     __tablename__ = "shelves"
     __table_args__ = (
         # Explicit names: the naming convention only uses the FIRST column, which would give

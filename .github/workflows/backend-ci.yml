@@ -6,12 +6,14 @@ on:
     paths:
       - "backend/**"
       - "scripts/**"
+      - "docs/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "backend/**"
       - "scripts/**"
+      - "docs/**"
       - ".github/workflows/backend-ci.yml"
   workflow_dispatch: # allow manual runs from the Actions tab
 

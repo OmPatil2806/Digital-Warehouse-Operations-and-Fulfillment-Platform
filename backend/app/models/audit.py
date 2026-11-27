@@ -32,6 +32,8 @@ class AuditAction(StrEnum):
 
 
 class AuditLog(IdMixin, Base):
+    """Who changed what and when, with the old and new values (append-only)."""
+
     __tablename__ = "audit_logs"
     __table_args__ = (
         Index("ix_audit_logs_entity", "entity_type", "entity_id"),

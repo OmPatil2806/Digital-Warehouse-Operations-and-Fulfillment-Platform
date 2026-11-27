@@ -40,6 +40,8 @@ OPEN_PO_STATUSES = (
 
 
 class PurchaseOrder(IdMixin, TimestampMixin, Base):
+    """An order of stock from a supplier for one warehouse (draft, ordered, received)."""
+
     __tablename__ = "purchase_orders"
     __table_args__ = (CheckConstraint(one_of("status", PurchaseOrderStatus), name="valid_status"),)
 
@@ -86,6 +88,8 @@ class PurchaseOrder(IdMixin, TimestampMixin, Base):
 
 
 class PurchaseOrderItem(IdMixin, Base):
+    """One product line of a purchase order: quantity, cost and how much arrived."""
+
     __tablename__ = "purchase_order_items"
     __table_args__ = (
         UniqueConstraint(

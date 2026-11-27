@@ -22,6 +22,8 @@ from app.models.user import User
 
 
 class Carrier(IdMixin, TimestampMixin, Base):
+    """A parcel carrier (e.g. DHL) with its tracking link and usual transit time."""
+
     __tablename__ = "carriers"
     __table_args__ = (
         CheckConstraint("default_transit_days >= 0", name="transit_days_not_negative"),
@@ -63,6 +65,8 @@ class ShipmentEventType(StrEnum):
 
 
 class Shipment(IdMixin, TimestampMixin, Base):
+    """The parcel(s) of a packed order handed to a carrier, with its tracking."""
+
     __tablename__ = "shipments"
     __table_args__ = (
         UniqueConstraint(

@@ -53,6 +53,8 @@ class MetricSplit(StrEnum):
 
 
 class ModelVersion(IdMixin, TimestampMixin, Base):
+    """A trained model (or baseline) of a use case, with its data, settings and status."""
+
     __tablename__ = "model_versions"
     __table_args__ = (
         UniqueConstraint("use_case", "model_name", "version"),
@@ -103,6 +105,8 @@ class ModelVersion(IdMixin, TimestampMixin, Base):
 
 
 class ModelMetric(IdMixin, Base):
+    """One evaluation number of a model on a split (train, validation or test)."""
+
     __tablename__ = "model_metrics"
     __table_args__ = (
         UniqueConstraint("model_version_id", "split", "name"),

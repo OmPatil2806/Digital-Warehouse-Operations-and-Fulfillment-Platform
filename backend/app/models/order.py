@@ -104,6 +104,8 @@ class Customer(IdMixin, TimestampMixin, Base):
 
 
 class Order(IdMixin, TimestampMixin, Base):
+    """A customer order: its lines, status, delivery address and milestones."""
+
     __tablename__ = "orders"
     __table_args__ = (
         CheckConstraint(one_of("status", OrderStatus), name="valid_status"),
@@ -309,6 +311,8 @@ class Return(IdMixin, TimestampMixin, Base):
 
 
 class ReturnItem(IdMixin, Base):
+    """Units of one order line in a return, their condition and where they went."""
+
     __tablename__ = "return_items"
     __table_args__ = (
         UniqueConstraint(

@@ -59,6 +59,22 @@ def test_one_command_generates_loads_and_validates(generated: tuple[Path, str]) 
     assert "0 failed" in output and "DATABASE_URL=sqlite:///" in output
 
 
+def test_the_demo_customer_sees_its_own_orders(generated: tuple[Path, str]) -> None:
+    path, _ = generated
+    ((code, orders),) = query(
+        path,
+        "SELECT c.code, COUNT(o.id) FROM customers c JOIN users u ON u.id = c.user_id "
+        "LEFT JOIN orders o ON o.customer_id = c.id WHERE u.email = 'customer@example.com' "
+        "GROUP BY c.id",
+    )
+    most = query(
+        path,
+        "SELECT MAX(n) FROM (SELECT COUNT(*) AS n FROM orders o JOIN customers c "
+        "ON c.id = o.customer_id WHERE c.is_active = 1 GROUP BY o.customer_id)",
+    )
+    assert code.startswith("CUST-") and orders == most[0][0] > 0
+
+
 def test_progress_one_line_per_month(generated: tuple[Path, str]) -> None:
     _, output = generated
     months = [line.split()[0] for line in output.splitlines() if line.startswith("  20")]

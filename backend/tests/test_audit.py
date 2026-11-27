@@ -240,11 +240,25 @@ def test_audit_log_endpoint_filters_newest_first(
     assert later.json()["total"] == 0
 
 
+def test_audit_log_filters_list_what_occurs_in_the_log(
+    client: TestClient, db_session: Session, admin: User
+):
+    headers = auth_headers(admin)
+    empty = client.get(f"{API}/audit-logs/filters", headers=headers).json()
+    toys = create_category(db_session, "Toys")
+    client.patch(f"{API}/categories/{toys.id}", json={"name": "Games"}, headers=headers)
+    filters = client.get(f"{API}/audit-logs/filters", headers=headers).json()
+    assert "category" in filters["entity_types"] and "category" not in empty["entity_types"]
+    assert {"create", "update"} <= set(filters["actions"])
+    assert filters["actions"] == sorted(set(filters["actions"]))  # sorted, no repeats
+
+
 @pytest.mark.parametrize("role", [RoleName.MANAGER, RoleName.STAFF, RoleName.CUSTOMER])
 def test_only_admins_can_read_the_audit_log(
     client: TestClient, db_session: Session, role: RoleName
 ):
     user = user_with_role(db_session, role)
 
-    assert client.get(f"{API}/audit-logs", headers=auth_headers(user)).status_code == 403
-    assert client.get(f"{API}/audit-logs").status_code == 401
+    for path in ("/audit-logs", "/audit-logs/filters"):
+        assert client.get(f"{API}{path}", headers=auth_headers(user)).status_code == 403
+        assert client.get(f"{API}{path}").status_code == 401

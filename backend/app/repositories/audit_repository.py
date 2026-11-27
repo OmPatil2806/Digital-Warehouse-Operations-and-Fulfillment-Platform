@@ -17,6 +17,10 @@ class AuditRepository:
         self.db.add(entry)
         return entry
 
+    def distinct(self, column) -> list[str]:
+        """The different values of a column that occur in the log, sorted."""
+        return list(self.db.scalars(select(column).distinct().order_by(column)))
+
     def search(
         self,
         *,

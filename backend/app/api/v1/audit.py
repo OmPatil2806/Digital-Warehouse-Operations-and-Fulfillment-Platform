@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession
 from app.core.permissions import require_roles
+from app.models.audit import AuditLog
 from app.models.user import RoleName
-from app.schemas.audit import AuditLogPage, AuditLogResponse
+from app.repositories.audit_repository import AuditRepository
+from app.schemas.audit import AuditLogFilters, AuditLogPage, AuditLogResponse
 from app.services.audit_service import AuditService
 
 router = APIRouter(
@@ -27,6 +29,19 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value is None or value.tzinfo is not None:
         return value
     return value.replace(tzinfo=UTC)
+
+
+@router.get(
+    "/filters",
+    response_model=AuditLogFilters,
+    summary="Record types and actions that occur in the log (for filtering)",
+)
+def audit_log_filters(db: DbSession) -> AuditLogFilters:
+    repository = AuditRepository(db)
+    return AuditLogFilters(
+        entity_types=repository.distinct(AuditLog.entity_type),
+        actions=repository.distinct(AuditLog.action),
+    )
 
 
 @router.get("", response_model=AuditLogPage, summary="Search the audit log (newest first)")

@@ -10,6 +10,7 @@ export const alertKeys = {
 
 export const auditKeys = {
   list: (params: object) => ['audit-logs', params] as const,
+  filters: ['audit-logs', 'filters'] as const,
 }
 
 export interface AlertListParams {
@@ -67,5 +68,13 @@ export async function listAuditLogs(params: AuditListParams = {}): Promise<Page<
       limit: params.limit,
     },
   })
+  return data
+}
+
+/** The record types and actions that occur in the audit log (options of its filters). */
+export async function getAuditFilters(): Promise<{ entity_types: string[]; actions: string[] }> {
+  const { data } = await apiClient.get<{ entity_types: string[]; actions: string[] }>(
+    '/audit-logs/filters',
+  )
   return data
 }

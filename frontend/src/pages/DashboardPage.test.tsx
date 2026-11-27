@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AxiosError } from 'axios'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -52,8 +52,11 @@ describe('DashboardPage', () => {
     expect(modules).not.toHaveTextContent('Users') // admin-only
     expect(modules).toHaveTextContent('Inventory')
     expect(modules).toHaveTextContent('Shipments')
-    expect(modules).toHaveTextContent('ML insightsAvailable') // ready since Phase 9
-    expect(modules).not.toHaveTextContent('Phase')
+    expect(within(modules).getByRole('link', { name: 'ML insights' })).toHaveAttribute(
+      'href',
+      '/ml-insights',
+    )
+    expect(modules).not.toHaveTextContent('Phase') // no development phases in v1
   })
 
   it('shows "Checking…" while the request is pending', () => {

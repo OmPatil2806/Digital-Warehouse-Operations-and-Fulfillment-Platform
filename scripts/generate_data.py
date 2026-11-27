@@ -37,9 +37,12 @@ from data_validation.validate_dataset import (  # noqa: E402
     validate_dataset,
 )
 from seed_database import DEMO_PASSWORD, DEMO_USERS  # noqa: E402  (the same demo logins)
+from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.config import INSECURE_SECRET_ALLOWED_ENVS, get_settings  # noqa: E402
+from app.models.order import Customer, Order  # noqa: E402
+from app.models.user import RoleName  # noqa: E402
 from app.schemas.user import UserCreate  # noqa: E402
 from app.services.user_service import UserService  # noqa: E402
 
@@ -62,12 +65,26 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def add_demo_users(db: Session) -> int:
-    """The demo logins (the database is always new, so none exist yet)."""
+    """The demo logins (the database is always new, so none exist yet). The customer
+    login is linked to the active customer with the most orders, so signing in as the
+    customer shows a full order history (without a link a customer login sees nothing)."""
     service = UserService(db)
+    created = {}
     for email, name, role in DEMO_USERS:
-        service.create_user(
+        created[role] = service.create_user(
             UserCreate(email=email, full_name=name, password=DEMO_PASSWORD, roles=[role])
         )
+    busiest = db.scalar(
+        select(Customer)
+        .join(Order, Order.customer_id == Customer.id)
+        .where(Customer.is_active.is_(True), Customer.user_id.is_(None))
+        .group_by(Customer.id)
+        .order_by(func.count(Order.id).desc(), Customer.id)
+        .limit(1)
+    )
+    if busiest is not None and RoleName.CUSTOMER in created:
+        busiest.user_id = created[RoleName.CUSTOMER].id
+        db.commit()
     return len(DEMO_USERS)
 
 

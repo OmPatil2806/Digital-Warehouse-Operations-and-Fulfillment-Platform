@@ -5,7 +5,7 @@ import { alertKeys, getAlertSummary } from '../../api/alertsApi'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { useAuth } from '../../hooks/useAuth'
 import { hasAnyRole } from '../../utils/roles'
-import { isReady, NAV_SECTIONS, type NavItem, type NavSection } from './navigation'
+import { NAV_SECTIONS, type NavItem, type NavSection } from './navigation'
 
 interface SidebarProps {
   /** Called after a link is clicked (closes the mobile menu). */
@@ -18,7 +18,7 @@ function visibleSections(sections: NavSection[], canSee: (item: NavItem) => bool
     .filter((section) => section.items.length > 0)
 }
 
-/** Role-aware navigation. Pages from later phases are listed but disabled. */
+/** Role-aware navigation: only the pages the user's role may open. */
 export function Sidebar({ onNavigate }: SidebarProps) {
   const { user } = useAuth()
   const sections = visibleSections(
@@ -61,22 +61,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 function SidebarLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const Icon = item.icon
   const base = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium'
-
-  if (!isReady(item)) {
-    return (
-      <span
-        aria-disabled="true"
-        title={`Coming in Phase ${item.availableInPhase}`}
-        className={`${base} cursor-not-allowed text-slate-500`}
-      >
-        <Icon size={18} aria-hidden="true" />
-        <span className="flex-1">{item.label}</span>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
-          P{item.availableInPhase}
-        </span>
-      </span>
-    )
-  }
 
   return (
     <NavLink

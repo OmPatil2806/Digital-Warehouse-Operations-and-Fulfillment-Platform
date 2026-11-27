@@ -23,3 +23,10 @@ class AuditLogResponse(BaseModel):
 
 
 AuditLogPage = Page[AuditLogResponse]
+
+
+class AuditLogFilters(BaseModel):
+    """The record types and actions that occur in the audit log (for the filters)."""
+
+    entity_types: list[str]
+    actions: list[str]

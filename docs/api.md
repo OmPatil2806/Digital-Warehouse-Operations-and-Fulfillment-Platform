@@ -53,7 +53,7 @@ Generated from the code; the backend tests fail when this list is out of date.
 
 <!-- generated:endpoints:start (scripts/generate_docs.py) -->
 
-137 endpoints. 🔒 = needs a login token (`Authorization: Bearer ...`).
+138 endpoints. 🔒 = needs a login token (`Authorization: Bearer ...`).
 
 ### Health
 
@@ -138,6 +138,7 @@ Generated from the code; the backend tests fail when this list is out of date.
 
 | | Method | Path | What it does |
 |---|---|---|---|
+| 🔒 | GET | `/api/v1/audit-logs/filters` | Record types and actions that occur in the log (for filtering) |
 | 🔒 | GET | `/api/v1/audit-logs` | Search the audit log (newest first) |
 
 ### Inventory

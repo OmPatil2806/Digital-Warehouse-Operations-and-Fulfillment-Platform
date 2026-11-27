@@ -54,6 +54,9 @@ pnpm-debug.log*
 # ==========================================================
 database/*.db
 database/*.db-journal
+# Reports written next to a generated database by local runs
+database/*_validation.md
+database/*_models.md
 *.sqlite
 *.sqlite3
 

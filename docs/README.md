@@ -9,6 +9,7 @@
 | [ml.md](ml.md) | data scientists, examiners | the six use cases: data, baselines, networks, results, use in the app |
 | [security.md](security.md) | developers, reviewers | the security review, rule by rule, with the tests that check it |
 | [performance.md](performance.md) | developers | the speed check on the full dataset and its fixes |
+| [demo-scenario.md](demo-scenario.md) | presenters | a 12–15 minute walkthrough through the four roles, and how to prepare it |
 
 The endpoint list in api.md, the table reference in database.md and openapi.json are
 generated from the code (`python scripts/generate_docs.py`); the backend tests fail when

@@ -3,6 +3,7 @@
   "GET /alerts",
   "GET /alerts/summary",
   "GET /audit-logs",
+  "GET /audit-logs/filters",
   "GET /auth/me",
   "GET /bins",
   "GET /bins/by-code/{location_code}",

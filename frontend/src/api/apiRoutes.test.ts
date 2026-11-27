@@ -67,6 +67,7 @@ const ALL_CALLS: [string, () => Promise<unknown>][] = [
   ['acknowledgeAlert', () => alertsApi.acknowledgeAlert(1)],
   ['resolveAlert', () => alertsApi.resolveAlert(1)],
   ['listAuditLogs', () => alertsApi.listAuditLogs({ entityType: 'product', entityId: 3 })],
+  ['getAuditFilters', () => alertsApi.getAuditFilters()],
   // catalog
   ['listCategories', () => catalogApi.listCategories()],
   ['listProducts', () => catalogApi.listProducts()],

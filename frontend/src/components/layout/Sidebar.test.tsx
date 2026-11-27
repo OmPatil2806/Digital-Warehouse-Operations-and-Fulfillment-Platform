@@ -62,7 +62,6 @@ describe('Sidebar', () => {
         'ML insights',
         'Users',
         'Audit log',
-        'Settings',
       ],
     ],
     [
@@ -131,7 +130,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Orders', { selector: 'p' })).toBeInTheDocument()
   })
 
-  it('ready pages are links', () => {
+  it('every page is a link', () => {
     const { nav } = renderSidebar('manager')
 
     const links = within(nav).getAllByRole('link')
@@ -150,14 +149,6 @@ describe('Sidebar', () => {
       ['ML insights', '/ml-insights'],
     ])
     expect(nav.querySelector('[aria-disabled="true"]')).toBeNull()
-  })
-
-  it('pages from later phases are disabled with a phase badge', () => {
-    const admin = renderSidebar('admin').nav
-    const settings = within(admin).getByText('Settings').closest('[aria-disabled="true"]')
-    expect(settings).not.toBeNull()
-    expect(settings).toHaveAttribute('title', 'Coming in Phase 10')
-    expect(settings).toHaveTextContent('P10')
   })
 
   it('keeps a section highlighted on its detail pages', () => {

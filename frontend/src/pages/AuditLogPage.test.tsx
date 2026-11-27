@@ -17,6 +17,7 @@ import AuditLogPage from './AuditLogPage'
 vi.mock('../api/alertsApi', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/alertsApi')>()),
   listAuditLogs: vi.fn(),
+  getAuditFilters: vi.fn(),
   getAlertSummary: vi.fn(),
 }))
 vi.mock('../api/healthApi', () => ({ getHealth: vi.fn() }))
@@ -64,6 +65,10 @@ const ENTRIES: AuditLogEntry[] = [
 beforeEach(() => {
   vi.clearAllMocks()
   api.listAuditLogs.mockResolvedValue(page(ENTRIES, 3, 0, 50))
+  api.getAuditFilters.mockResolvedValue({
+    entity_types: ['product', 'reorder_recommendations', 'goods_receipt'],
+    actions: ['inventory.receive', 'ml.reorder.approve', 'update'],
+  })
   api.getAlertSummary.mockResolvedValue({ unresolved: 0 })
 })
 
@@ -103,9 +108,13 @@ describe('AuditLogPage', () => {
       offset: 0,
       limit: 50,
     })
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Action' }), 'inventory.receive')
+    // The options are what occurs in the log, with readable record names.
+    const records = screen.getByRole('combobox', { name: 'Record type' })
+    await within(records).findByRole('option', { name: 'Reorder recommendations (ML)' })
+    expect(within(records).getByRole('option', { name: 'goods receipt' })).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Action' }), 'ml.reorder.approve')
     expect(screen.getByTestId('location').textContent).toBe(
-      '/audit-log?entity=product&action=inventory.receive',
+      '/audit-log?entity=product&action=ml.reorder.approve',
     )
   })
 

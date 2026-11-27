@@ -39,15 +39,15 @@ purchase orders but do not change them, and their stock losses wait for a manage
 ## Customer
 
 **Place an order**: Orders → **New order** → add products and quantities → **Place
-order**, then **Confirm** it on the order's page: that reserves the stock for you. Until
-then you can still cancel it.
+order**, then **Confirm order** on the order's page: that reserves the stock for you.
+Until the warehouse starts picking it you can still **Cancel order**.
 
 **Follow it**: the order's page shows its status timeline and, once shipped, the
 carrier, tracking number and tracking events. **My parcels** on the dashboard lists
 recent shipments.
 
-**Return something**: on a delivered order, **Open return**, choose the items and the
-reason. The warehouse inspects them when they arrive.
+**Return something**: on a delivered order, **Return items**, choose the items and the
+reason, **Open return**. The warehouse inspects them when they arrive.
 
 You only ever see your own orders, shipments and returns.
 
@@ -61,7 +61,8 @@ You only ever see your own orders, shipments and returns.
 - Without a purchase order: Inventory → **Receive**, scan or type the bin code. The form
   checks that the bin has room (weight and volume).
 
-**Pick and pack**: Fulfillment.
+**Pick and pack**: on a reserved order's page, **Create picking route**; then
+Fulfillment.
 1. **Picking**: the queue lists the stops of each order as a walking route (farthest
    racks first). **Start**, go to the bin, confirm the bin code and the product, enter
    the quantity found (a short pick asks for a reason).
@@ -96,8 +97,9 @@ Everything staff can do, plus:
 **Approve**: Inventory → **Approvals**: stock losses, transfers between warehouses and
 cycle counts (**Approve**, **Reject** with a note, or **Send back for recount**).
 
-**Orders**: create orders for any customer; **Confirm**, **Hold** / **Release**,
-**Cancel** (with a reason); retry the reservation of an order waiting for stock.
+**Orders**: create orders for any customer; on the order's page **Confirm order**, **Put
+on hold** / **Release hold**, **Cancel order** (with a reason), and **Retry reservation**
+for an order waiting for stock.
 
 **Buy stock**: Purchase orders → **New purchase order** (supplier, warehouse, products;
 prices come from the supplier's offer) → **Save draft** → **Send to supplier**. **Check

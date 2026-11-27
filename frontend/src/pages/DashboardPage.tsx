@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react'
+import { Link } from 'react-router'
 
 import { getHealth } from '../api/healthApi'
 import { HealthStatusCard, type HealthState } from '../components/common/HealthStatusCard'
-import { isReady, NAV_SECTIONS } from '../components/layout/navigation'
+import { NAV_SECTIONS } from '../components/layout/navigation'
 import { isOrderManager, isWarehouseRole } from '../components/orders/orderFormat'
 import { useApiQuery } from '../hooks/useApiQuery'
 import { useAuth } from '../hooks/useAuth'
@@ -60,20 +61,16 @@ export default function DashboardPage() {
           <h2 id="modules-heading" className="font-medium">
             Your modules
           </h2>
-          <ul className="mt-4 space-y-2 text-sm">
+          <ul className="mt-4 grid gap-1 text-sm sm:grid-cols-2">
             {modules.map((item) => (
-              <li key={item.label} className="flex items-center gap-3">
-                <item.icon size={16} className="text-slate-400" aria-hidden="true" />
-                <span className="flex-1">{item.label}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                    isReady(item)
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-slate-100 text-slate-500'
-                  }`}
+              <li key={item.label}>
+                <Link
+                  to={item.to}
+                  className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-slate-700 hover:bg-slate-50 hover:text-blue-700"
                 >
-                  {isReady(item) ? 'Available' : `Phase ${item.availableInPhase}`}
-                </span>
+                  <item.icon size={16} className="text-slate-400" aria-hidden="true" />
+                  {item.label}
+                </Link>
               </li>
             ))}
           </ul>

@@ -2681,6 +2681,38 @@
         }
       }
     },
+    "/api/v1/audit-logs/filters": {
+      "get": {
+        "tags": [
+          "Audit"
+        ],
+        "summary": "Record types and actions that occur in the log (for filtering)",
+        "operationId": "audit_log_filters_api_v1_audit_logs_filters_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogFilters"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Admin role required"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/audit-logs": {
       "get": {
         "tags": [
@@ -9686,6 +9718,31 @@
           "transfers"
         ],
         "title": "ApprovalQueueResponse"
+      },
+      "AuditLogFilters": {
+        "properties": {
+          "entity_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entity Types"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_types",
+          "actions"
+        ],
+        "title": "AuditLogFilters",
+        "description": "The record types and actions that occur in the audit log (for the filters)."
       },
       "AuditLogResponse": {
         "properties": {

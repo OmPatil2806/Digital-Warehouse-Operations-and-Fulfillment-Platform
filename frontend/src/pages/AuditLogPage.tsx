@@ -1,4 +1,4 @@
-import { auditKeys, listAuditLogs } from '../api/alertsApi'
+import { auditKeys, getAuditFilters, listAuditLogs } from '../api/alertsApi'
 import { Badge, type BadgeTone } from '../components/common/Badge'
 import { DataTable, type Column } from '../components/common/DataTable'
 import { FilterSelect, PageHeader } from '../components/common/PageHeader'
@@ -10,41 +10,34 @@ import type { AuditChanges, AuditLogEntry } from '../types/alerts'
 const PAGE_SIZE = 50
 const URL_DEFAULTS = { entity: '', action: '', offset: '0' }
 
-const ENTITY_TYPES = [
-  ['user', 'Users'],
-  ['product', 'Products'],
-  ['category', 'Categories'],
-  ['supplier', 'Suppliers'],
-  ['supplier_product', 'Supplier offers'],
-  ['warehouse', 'Warehouses'],
-  ['zone', 'Zones'],
-  ['rack', 'Racks'],
-  ['shelf', 'Shelves'],
-  ['bin', 'Bins'],
-  ['inventory', 'Stock'],
-  ['stock_adjustment', 'Adjustment requests'],
-  ['stock_transfer', 'Transfers'],
-  ['cycle_count', 'Cycle counts'],
-] as const
+/** Readable names of the record types; others are shown with spaces ("goods_receipt"). */
+const ENTITY_LABELS: Record<string, string> = {
+  user: 'Users',
+  product: 'Products',
+  category: 'Categories',
+  supplier: 'Suppliers',
+  supplier_product: 'Supplier offers',
+  warehouse: 'Warehouses',
+  zone: 'Zones',
+  rack: 'Racks',
+  shelf: 'Shelves',
+  bin: 'Bins',
+  inventory: 'Stock',
+  stock_adjustment: 'Adjustment requests',
+  stock_transfer: 'Transfers',
+  cycle_count: 'Cycle counts',
+  customer: 'Customers',
+  order: 'Orders',
+  return: 'Returns',
+  shipment: 'Shipments',
+  purchase_order: 'Purchase orders',
+  reorder_recommendations: 'Reorder recommendations (ML)',
+  slotting_recommendations: 'Slotting recommendations (ML)',
+}
 
-const ACTIONS = [
-  'create',
-  'update',
-  'delete',
-  'inventory.receive',
-  'inventory.adjust',
-  'inventory.transfer',
-  'inventory.reserve',
-  'inventory.release',
-  'stock_adjustment.request',
-  'stock_adjustment.approve',
-  'stock_adjustment.reject',
-  'stock_transfer.request',
-  'stock_transfer.approve',
-  'stock_transfer.reject',
-  'cycle_count.start',
-  'cycle_count.approve',
-]
+function entityLabel(type: string): string {
+  return ENTITY_LABELS[type] ?? type.replaceAll('_', ' ')
+}
 
 function actionTone(action: string): BadgeTone {
   if (action === 'delete' || action.endsWith('.reject')) return 'danger'
@@ -128,6 +121,8 @@ const COLUMNS: Column<AuditLogEntry>[] = [
 /** Admin-only, read-only view of the audit log (who changed what, when; old and new values). */
 export default function AuditLogPage() {
   const [filters, setFilters] = useUrlState(URL_DEFAULTS)
+  // Only what occurs in the log, so the filters stay complete as the platform grows.
+  const filterOptions = useApiQuery(auditKeys.filters, getAuditFilters)
   const params = {
     entityType: filters.entity || undefined,
     action: filters.action || undefined,
@@ -151,7 +146,10 @@ export default function AuditLogPage() {
           onChange={(entity) => setFilters({ entity })}
           options={[
             { value: '', label: 'All records' },
-            ...ENTITY_TYPES.map(([value, label]) => ({ value, label })),
+            ...(filterOptions.data?.entity_types ?? []).map((value) => ({
+              value,
+              label: entityLabel(value),
+            })),
           ]}
         />
         <FilterSelect
@@ -160,7 +158,7 @@ export default function AuditLogPage() {
           onChange={(action) => setFilters({ action })}
           options={[
             { value: '', label: 'All actions' },
-            ...ACTIONS.map((a) => ({ value: a, label: a })),
+            ...(filterOptions.data?.actions ?? []).map((a) => ({ value: a, label: a })),
           ]}
         />
       </div>

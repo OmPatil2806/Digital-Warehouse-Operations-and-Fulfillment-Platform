@@ -595,7 +595,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 - [x] **Phase 7: Synthetic data platform**: large, realistic, validated two-year dataset generated with one command (`v0.7.0`) ✅
 - [x] **Phase 8: ML experimentation**: baselines and TensorFlow/Keras models trained, compared and registered for all six use cases (`v0.8.0`) ✅
 - [x] **Phase 9: ML application integration**: predictions of the selected models inside the application, with approve/reject, purchase-order drafts and checks against reality (`v0.9.0`) ✅
-- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML checks and workflows (`scripts/check_models.py` in ML CI: models load, predictions complete and valid; *Train models* workflow started by hand, reports and models as downloads) done; release workflow next*
+- [ ] **Phase 10: Hardening, CI/CD & documentation**: final tested and documented platform (`v1.0.0`) 🚧 *in progress: test coverage in CI (backend 97 %, frontend 92 % of lines), end-to-end business scenarios (`backend/tests/integration/`), whole-app flows (`frontend/tests/`: login, roles, logout, session restore and expiry) a check that every API call of the web app matches a backend route, and the security review ([docs/security.md](docs/security.md): failed-login limit, security headers, strict CORS, clean server errors, security lint rules, weekly dependency audits) done; speed check with the full dataset ([docs/performance.md](docs/performance.md): all 44 page calls within limits on 500,000 orders, e.g. stock history 6 s → 22 ms, order search 1.4 s → 33 ms) done; ML checks and workflows (`scripts/check_models.py` in ML CI: models load, predictions complete and valid; *Train models* workflow started by hand, reports and models as downloads) done; release workflow (*Delivery*: every push builds and smoke-tests the package; a version tag runs all tests and publishes a GitHub Release) done; documentation next*
 
 ---
 
@@ -608,6 +608,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── frontend-ci.yml       # lint, type-check, test and build the UI
 │   ├── ml-ci.yml             # lint and test the data generator, quick training, scoring and backtest
 │   ├── security.yml          # dependency audits (pip-audit, npm audit): on changes and weekly
+│   ├── delivery.yml          # build and smoke-test the release package; on a version tag: publish it
 │   └── train-models.yml      # full training run, started by hand; reports and models as downloads
 ├── backend/
 │   ├── app/
@@ -665,6 +666,7 @@ The project is delivered in **10 phases**. Each phase ends with passing CI and a
 │   ├── export_api_routes.py  # list the backend routes for the frontend tests (frontend/src/test/apiRoutes.json)
 │   ├── benchmark_api.py      # speed check: time the API behind every page on a (large) database
 │   ├── check_models.py       # check the selected models load and their predictions are valid
+│   ├── build_release.py      # build the release zip (project + built web app + install guide + checksum)
 │   └── seed_database.py      # load demo data (users, catalog, suppliers, warehouse layout, stock)
 ├── docs/
 │   ├── security.md           # security review: each rule, how it is met, which test checks it
@@ -807,6 +809,7 @@ Every push and pull request to `main` runs **GitHub Actions**:
 | ML CI | `ml/**`, `backend/**` or the data, training and scoring scripts change | Ruff → Black → Pytest → generate and validate the small dataset → train every use case quickly on it → score with the selected models → check the models and predictions → backtest |
 | Security | dependency files change, every Monday, or by hand | pip-audit (backend and ML packages) → npm audit (production bundle, then everything) |
 | Train models | started by hand (Actions tab) | generate a small, medium or full dataset → train and compare all six use cases → score → check → backtest → reports and models as downloads |
+| Delivery | every push to `main`; version tags `v*.*.*` | build the web app → build the release zip → unpack it, migrate, load demo data, start the API, log in → on a tag: all test suites and the version check, then publish the GitHub Release |
 
 ---
 
@@ -815,6 +818,17 @@ Every push and pull request to `main` runs **GitHub Actions**:
 - Work happens on the `main` branch, one small, reviewed step at a time.
 - Run the tests and quality checks locally before every push.
 - Each phase ends with green CI and a tagged release (`v0.1.0`, `v0.2.0`, …).
+
+### Releases
+
+Pushing a version tag publishes a release: the *Delivery* workflow runs all test suites, checks that the tag matches the version in the code, builds and smoke-tests the package, and attaches it to a GitHub Release.
+
+```bash
+git tag -a v1.0.0 -m "Version 1.0.0"
+git push origin v1.0.0
+```
+
+The package (`warehouse-platform-<version>.zip`) holds the project and the built web app, with `INSTALL.md` (how to run it) and `SHA256SUMS` (to verify the download). It contains no databases, `.env` files or trained models. To build the same package locally: `cd frontend; npm run build`, then from the project root `python scripts/build_release.py` (add `--version v1.0.0` for a release version).
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `test:`, `docs:`, `ci:`, `chore:`).
 
 ---

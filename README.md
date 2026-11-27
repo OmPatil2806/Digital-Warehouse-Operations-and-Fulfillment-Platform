@@ -32,6 +32,18 @@ The platform manages products, suppliers, physical storage locations, inventory,
 
 ---
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Manager dashboard](docs/screenshots/dashboard-manager.png) **Manager dashboard**: stock, orders, deliveries, alerts, purchasing | ![ML insights: reorder](docs/screenshots/ml-reorder.png) **ML insights**: products likely to run out, with what to order and why |
+| ![Product page](docs/screenshots/product-forecast.png) **Product page**: stock per bin, 30-day demand forecast, related products | ![Predictions vs reality](docs/screenshots/ml-models.png) **Models**: the model of each use case and its check against reality |
+| ![Fulfillment](docs/screenshots/fulfillment-staff.png) **Fulfillment** (staff): picking route and packing | ![Customer dashboard](docs/screenshots/dashboard-customer.png) **Customer**: own orders and parcels |
+
+More in [docs/screenshots/](docs/screenshots/); taken with `scripts/take_screenshots.mjs` on a demo database (`python scripts/prepare_demo.py`).
+
+---
+
 ## Problems Addressed
 
 | # | Problem | How the platform solves it |

@@ -5,7 +5,7 @@ customer orders, the warehouse floor fulfils the order, the manager acts on the 
 recommendations, and the admin sees the trail. Each step lists what to click and what to
 point out.
 
-## Before the presentation (once, 20–40 minutes ahead)
+## Before the presentation (once, about 30 minutes ahead)
 
 ```bash
 python scripts/prepare_demo.py                # medium dataset, full training
@@ -13,7 +13,8 @@ python scripts/prepare_demo.py                # medium dataset, full training
 
 It generates the data (two years, 50,000 orders, 500 products) with the demo logins,
 trains and compares all six ML use cases, scores them, checks the models and backtests
-the last 30 days. At the end it prints the three things to do:
+the last 30 days. Measured on a 4-core PC: 26 minutes (1.5 for the data, 24 for the
+training, under a minute for the rest). At the end it prints the three things to do:
 
 1. In `.env`: `DATABASE_URL=sqlite:///./database/warehouse_demo.db`
 2. Start the API: `cd backend`, then `uvicorn app.main:app --port 8000`
